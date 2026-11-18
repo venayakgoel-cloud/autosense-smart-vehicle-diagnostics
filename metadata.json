@@ -1,0 +1,6 @@
+{
+  "name": "AutoSense",
+  "description": "Smart vehicle diagnostic platform connecting plug-and-play OBD-II hardware with plain-English trouble code insights, vehicle health monitoring, maintenance tracking, and AI guidance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,210 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile and notification preferences.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "minLength": 3, "maxLength": 150 },
+        "phone": { "type": "string", "minLength": 0, "maxLength": 30 },
+        "city": { "type": "string", "minLength": 0, "maxLength": 80 },
+        "photoUrl": { "type": "string", "minLength": 0, "maxLength": 500 },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "preferences": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "fullName", "email", "role", "createdAt", "updatedAt"]
+    },
+    "AdminMarker": {
+      "title": "AdminMarker",
+      "description": "Trusted administrator role marker document keyed by user UID.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "minLength": 3, "maxLength": 150 },
+        "grantedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "grantedAt"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "A user-owned vehicle registered in AutoSense My Garage.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "manufacturer": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "model": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "year": { "type": "integer" },
+        "fuelType": { "type": "string", "enum": ["Petrol", "Diesel", "Hybrid", "Electric", "CNG"] },
+        "registrationNumber": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "odometerKm": { "type": "number" },
+        "vin": { "type": "string", "minLength": 0, "maxLength": 30 },
+        "isPrimary": { "type": "boolean" },
+        "connectionStatus": { "type": "string", "enum": ["disconnected", "demo_connected", "bluetooth_ready", "wifi_ready"] },
+        "lastHealthScore": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "manufacturer", "model", "year", "fuelType", "registrationNumber", "odometerKm", "isPrimary", "connectionStatus", "lastHealthScore", "createdAt", "updatedAt"]
+    },
+    "DiagnosticScan": {
+      "title": "DiagnosticScan",
+      "description": "An OBD-II diagnostic scan report linked to a vehicle.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleLabel": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "isDemoData": { "type": "boolean" },
+        "connectionMode": { "type": "string", "enum": ["DEMO_OBD", "BLUETOOTH", "WIFI"] },
+        "overallHealthScore": { "type": "number" },
+        "engineHealthScore": { "type": "number" },
+        "batteryVoltage": { "type": "number" },
+        "coolantTempC": { "type": "number" },
+        "fuelTrimPct": { "type": "number" },
+        "emissionReadiness": { "type": "string", "enum": ["Ready", "Pending", "Unsupported"] },
+        "supportedSensors": { "type": "object" },
+        "detectedCodes": { "type": "array" },
+        "resolvedCodes": { "type": "array" },
+        "status": { "type": "string", "enum": ["active", "resolved"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "scannedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "vehicleLabel", "isDemoData", "connectionMode", "overallHealthScore", "engineHealthScore", "batteryVoltage", "coolantTempC", "fuelTrimPct", "emissionReadiness", "supportedSensors", "detectedCodes", "resolvedCodes", "status", "summary", "scannedAt", "updatedAt"]
+    },
+    "MaintenanceRecord": {
+      "title": "MaintenanceRecord",
+      "description": "Scheduled or completed maintenance record for a user vehicle.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleLabel": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "category": { "type": "string", "enum": ["Oil Service", "Battery Inspection", "Tyre Maintenance", "Brake Inspection", "General Service", "Custom"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "notes": { "type": "string", "minLength": 0, "maxLength": 500 },
+        "dueDate": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "dueOdometerKm": { "type": "number" },
+        "status": { "type": "string", "enum": ["upcoming", "overdue", "completed"] },
+        "completedAt": { "type": "string", "minLength": 0, "maxLength": 40 },
+        "isDemoData": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "vehicleLabel", "category", "title", "dueDate", "dueOdometerKm", "status", "isDemoData", "createdAt", "updatedAt"]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "In-app alert for diagnostic issues, maintenance reminders, or connection events.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["diagnostic", "maintenance", "connection", "scan", "system"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "isRead": { "type": "boolean" },
+        "relatedPath": { "type": "string", "minLength": 0, "maxLength": 60 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "type", "title", "message", "isRead", "createdAt", "updatedAt"]
+    },
+    "ObdCodeEntry": {
+      "title": "ObdCodeEntry",
+      "description": "Admin-managed OBD-II diagnostic trouble code reference.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "minLength": 2, "maxLength": 12 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "category": { "type": "string", "enum": ["Engine", "Fuel & Air", "Ignition", "Emissions", "Transmission", "Electrical", "Sensors"] },
+        "severity": { "type": "string", "enum": ["Critical", "High", "Medium", "Low"] },
+        "meaning": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "possibleCauses": { "type": "array" },
+        "nextSteps": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "mechanicAdvice": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "name", "category", "severity", "meaning", "possibleCauses", "nextSteps", "mechanicAdvice", "updatedAt"]
+    },
+    "ServiceCentre": {
+      "title": "ServiceCentre",
+      "description": "Admin-managed service centre or mechanic listing.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "city": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "address": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "phone": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "specialties": { "type": "array" },
+        "rating": { "type": "number" },
+        "hours": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "isSampleListing": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "city", "address", "phone", "specialties", "rating", "hours", "isSampleListing", "updatedAt"]
+    },
+    "ServiceEnquiry": {
+      "title": "ServiceEnquiry",
+      "description": "User service appointment request, general enquiry, or product feedback.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "ownerEmail": { "type": "string", "format": "email", "minLength": 3, "maxLength": 150 },
+        "type": { "type": "string", "enum": ["appointment", "enquiry", "feedback"] },
+        "serviceCentreName": { "type": "string", "minLength": 0, "maxLength": 120 },
+        "vehicleLabel": { "type": "string", "minLength": 0, "maxLength": 120 },
+        "preferredDate": { "type": "string", "minLength": 0, "maxLength": 30 },
+        "subject": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "scheduled", "closed"] },
+        "adminNote": { "type": "string", "minLength": 0, "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "ownerName", "ownerEmail", "type", "subject", "message", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User account profile with strict owner/admin PII isolation."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminMarker" },
+      "description": "Trusted admin role registry."
+    },
+    "/vehicles/{vehicleId}": {
+      "schema": { "$ref": "#/entities/Vehicle" },
+      "description": "User garage vehicles."
+    },
+    "/diagnosticScans/{scanId}": {
+      "schema": { "$ref": "#/entities/DiagnosticScan" },
+      "description": "Vehicle diagnostic scan history and detected codes."
+    },
+    "/maintenanceRecords/{recordId}": {
+      "schema": { "$ref": "#/entities/MaintenanceRecord" },
+      "description": "Maintenance reminders and service logs."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/NotificationItem" },
+      "description": "In-app notifications per user."
+    },
+    "/obdCodes/{codeId}": {
+      "schema": { "$ref": "#/entities/ObdCodeEntry" },
+      "description": "Admin-managed OBD-II error code library."
+    },
+    "/serviceCentres/{centreId}": {
+      "schema": { "$ref": "#/entities/ServiceCentre" },
+      "description": "Admin-managed service centre directory."
+    },
+    "/serviceEnquiries/{enquiryId}": {
+      "schema": { "$ref": "#/entities/ServiceEnquiry" },
+      "description": "Service appointment requests, support enquiries, and user feedback."
+    }
+  }
+}

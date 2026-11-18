@@ -1,0 +1,448 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Pillar 4.1: Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Pillar 3: Global Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isTokenAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'venayak.0251mba765@dgu.ac.in' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isTokenAdmin() ||
+        (isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isStringList(arr, maxLen, maxItemLen) {
+      return arr is list &&
+        arr.size() <= maxLen &&
+        (arr.size() == 0 || (arr[0] is string && arr[0].size() <= maxItemLen));
+    }
+
+    // =========================================================
+    // Entity Validation Blueprints (Pillar 2)
+    // =========================================================
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'fullName', 'email', 'role', 'preferences', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'fullName', 'email', 'phone', 'city', 'photoUrl', 'role', 'preferences', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        data.uid == userId &&
+        data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 100 &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+        (!('phone' in data) || (data.phone is string && data.phone.size() <= 30)) &&
+        (!('city' in data) || (data.city is string && data.city.size() <= 80)) &&
+        (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 500)) &&
+        data.role in ['user', 'admin'] &&
+        data.preferences is map &&
+        data.preferences.keys().hasAll(['emailAlerts', 'pushAlerts', 'maintenanceReminders', 'shareDiagnosticTelemetry']) &&
+        data.preferences.keys().hasOnly(['emailAlerts', 'pushAlerts', 'maintenanceReminders', 'shareDiagnosticTelemetry']) &&
+        data.preferences.emailAlerts is bool &&
+        data.preferences.pushAlerts is bool &&
+        data.preferences.maintenanceReminders is bool &&
+        data.preferences.shareDiagnosticTelemetry is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAdminMarker(data, adminId) {
+      return data.keys().hasAll(['uid', 'email', 'grantedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'grantedAt']) &&
+        isValidId(data.uid) &&
+        data.uid == adminId &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+        data.grantedAt is timestamp;
+    }
+
+    function isValidVehicle(data) {
+      return data.keys().hasAll([
+          'ownerId', 'manufacturer', 'model', 'year', 'fuelType',
+          'registrationNumber', 'odometerKm', 'isPrimary', 'connectionStatus',
+          'lastHealthScore', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'manufacturer', 'model', 'year', 'fuelType',
+          'registrationNumber', 'odometerKm', 'vin', 'isPrimary',
+          'connectionStatus', 'lastHealthScore', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.manufacturer is string && data.manufacturer.size() >= 1 && data.manufacturer.size() <= 60 &&
+        data.model is string && data.model.size() >= 1 && data.model.size() <= 60 &&
+        data.year is int && data.year >= 1980 && data.year <= 2030 &&
+        data.fuelType in ['Petrol', 'Diesel', 'Hybrid', 'Electric', 'CNG'] &&
+        data.registrationNumber is string && data.registrationNumber.size() >= 1 && data.registrationNumber.size() <= 30 &&
+        data.odometerKm is number && data.odometerKm >= 0 && data.odometerKm <= 2000000 &&
+        (!('vin' in data) || (data.vin is string && data.vin.size() <= 30)) &&
+        data.isPrimary is bool &&
+        data.connectionStatus in ['disconnected', 'demo_connected', 'bluetooth_ready', 'wifi_ready'] &&
+        data.lastHealthScore is number && data.lastHealthScore >= 0 && data.lastHealthScore <= 100 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidDiagnosticScan(data) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'vehicleLabel', 'isDemoData', 'connectionMode',
+          'overallHealthScore', 'engineHealthScore', 'batteryVoltage', 'coolantTempC',
+          'fuelTrimPct', 'emissionReadiness', 'supportedSensors', 'detectedCodes',
+          'resolvedCodes', 'status', 'summary', 'scannedAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'vehicleLabel', 'isDemoData', 'connectionMode',
+          'overallHealthScore', 'engineHealthScore', 'batteryVoltage', 'coolantTempC',
+          'fuelTrimPct', 'emissionReadiness', 'supportedSensors', 'detectedCodes',
+          'resolvedCodes', 'status', 'summary', 'scannedAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        isValidId(data.vehicleId) &&
+        data.vehicleLabel is string && data.vehicleLabel.size() >= 1 && data.vehicleLabel.size() <= 120 &&
+        data.isDemoData is bool &&
+        data.connectionMode in ['DEMO_OBD', 'BLUETOOTH', 'WIFI'] &&
+        data.overallHealthScore is number && data.overallHealthScore >= 0 && data.overallHealthScore <= 100 &&
+        data.engineHealthScore is number && data.engineHealthScore >= 0 && data.engineHealthScore <= 100 &&
+        data.batteryVoltage is number && data.batteryVoltage >= -1 && data.batteryVoltage <= 30 &&
+        data.coolantTempC is number && data.coolantTempC >= -50 && data.coolantTempC <= 220 &&
+        data.fuelTrimPct is number && data.fuelTrimPct >= -50 && data.fuelTrimPct <= 50 &&
+        data.emissionReadiness in ['Ready', 'Pending', 'Unsupported'] &&
+        data.supportedSensors is map &&
+        data.supportedSensors.keys().hasAll(['battery', 'coolantTemp', 'fuelSystem', 'emissions', 'rpm']) &&
+        data.supportedSensors.keys().hasOnly(['battery', 'coolantTemp', 'fuelSystem', 'emissions', 'rpm']) &&
+        data.supportedSensors.battery is bool &&
+        data.supportedSensors.coolantTemp is bool &&
+        data.supportedSensors.fuelSystem is bool &&
+        data.supportedSensors.emissions is bool &&
+        data.supportedSensors.rpm is bool &&
+        isStringList(data.detectedCodes, 20, 12) &&
+        isStringList(data.resolvedCodes, 20, 12) &&
+        data.status in ['active', 'resolved'] &&
+        data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 500 &&
+        data.scannedAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidMaintenanceRecord(data) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'vehicleLabel', 'category', 'title',
+          'dueDate', 'dueOdometerKm', 'status', 'isDemoData', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'vehicleLabel', 'category', 'title',
+          'notes', 'dueDate', 'dueOdometerKm', 'status', 'completedAt',
+          'isDemoData', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        isValidId(data.vehicleId) &&
+        data.vehicleLabel is string && data.vehicleLabel.size() >= 1 && data.vehicleLabel.size() <= 120 &&
+        data.category in ['Oil Service', 'Battery Inspection', 'Tyre Maintenance', 'Brake Inspection', 'General Service', 'Custom'] &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
+        data.dueDate is string && data.dueDate.size() >= 1 && data.dueDate.size() <= 30 &&
+        data.dueOdometerKm is number && data.dueOdometerKm >= 0 && data.dueOdometerKm <= 2000000 &&
+        data.status in ['upcoming', 'overdue', 'completed'] &&
+        (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() <= 40)) &&
+        data.isDemoData is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidNotificationItem(data) {
+      return data.keys().hasAll(['ownerId', 'type', 'title', 'message', 'isRead', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'type', 'title', 'message', 'isRead', 'relatedPath', 'createdAt', 'updatedAt']) &&
+        isValidId(data.ownerId) &&
+        data.type in ['diagnostic', 'maintenance', 'connection', 'scan', 'system'] &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.message is string && data.message.size() >= 1 && data.message.size() <= 500 &&
+        data.isRead is bool &&
+        (!('relatedPath' in data) || (data.relatedPath is string && data.relatedPath.size() <= 60)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidObdCodeEntry(data) {
+      return data.keys().hasAll(['code', 'name', 'category', 'severity', 'meaning', 'possibleCauses', 'nextSteps', 'mechanicAdvice', 'updatedAt']) &&
+        data.keys().hasOnly(['code', 'name', 'category', 'severity', 'meaning', 'possibleCauses', 'nextSteps', 'mechanicAdvice', 'updatedAt']) &&
+        data.code is string && data.code.size() >= 2 && data.code.size() <= 12 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.category in ['Engine', 'Fuel & Air', 'Ignition', 'Emissions', 'Transmission', 'Electrical', 'Sensors'] &&
+        data.severity in ['Critical', 'High', 'Medium', 'Low'] &&
+        data.meaning is string && data.meaning.size() >= 1 && data.meaning.size() <= 600 &&
+        isStringList(data.possibleCauses, 10, 140) &&
+        data.nextSteps is string && data.nextSteps.size() >= 1 && data.nextSteps.size() <= 500 &&
+        data.mechanicAdvice is string && data.mechanicAdvice.size() >= 1 && data.mechanicAdvice.size() <= 400 &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidServiceCentre(data) {
+      return data.keys().hasAll(['name', 'city', 'address', 'phone', 'specialties', 'rating', 'hours', 'isSampleListing', 'updatedAt']) &&
+        data.keys().hasOnly(['name', 'city', 'address', 'phone', 'specialties', 'rating', 'hours', 'isSampleListing', 'updatedAt']) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.city is string && data.city.size() >= 1 && data.city.size() <= 80 &&
+        data.address is string && data.address.size() >= 1 && data.address.size() <= 200 &&
+        data.phone is string && data.phone.size() >= 1 && data.phone.size() <= 30 &&
+        isStringList(data.specialties, 10, 60) &&
+        data.rating is number && data.rating >= 0 && data.rating <= 5 &&
+        data.hours is string && data.hours.size() >= 1 && data.hours.size() <= 80 &&
+        data.isSampleListing is bool &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidServiceEnquiry(data) {
+      return data.keys().hasAll(['ownerId', 'ownerName', 'ownerEmail', 'type', 'subject', 'message', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'ownerName', 'ownerEmail', 'type', 'serviceCentreName', 'vehicleLabel', 'preferredDate', 'subject', 'message', 'status', 'adminNote', 'createdAt', 'updatedAt']) &&
+        isValidId(data.ownerId) &&
+        data.ownerName is string && data.ownerName.size() >= 1 && data.ownerName.size() <= 100 &&
+        data.ownerEmail is string && data.ownerEmail.size() >= 3 && data.ownerEmail.size() <= 150 &&
+        data.type in ['appointment', 'enquiry', 'feedback'] &&
+        (!('serviceCentreName' in data) || (data.serviceCentreName is string && data.serviceCentreName.size() <= 120)) &&
+        (!('vehicleLabel' in data) || (data.vehicleLabel is string && data.vehicleLabel.size() <= 120)) &&
+        (!('preferredDate' in data) || (data.preferredDate is string && data.preferredDate.size() <= 30)) &&
+        data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 160 &&
+        data.message is string && data.message.size() >= 1 && data.message.size() <= 1000 &&
+        data.status in ['pending', 'reviewed', 'scheduled', 'closed'] &&
+        (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 500)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // =========================================================
+    // Collection Match Blocks
+    // =========================================================
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isTokenAdmin() || (isSignedIn() && existing().uid == request.auth.uid);
+
+      allow create: if isVerified() &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          (isOwner(userId) && incoming().role == 'user') ||
+          isAdmin()
+        );
+
+      allow update: if isVerified() &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwner(userId) &&
+            incoming().role == existing().role &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'phone', 'city', 'photoUrl', 'preferences', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if isTokenAdmin();
+      allow create: if isAdmin() && isValidId(adminId) && isValidAdminMarker(incoming(), adminId) && incoming().grantedAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(adminId) && isAdmin();
+    }
+
+    match /vehicles/{vehicleId} {
+      allow get: if isValidId(vehicleId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
+
+      allow create: if isVerified() &&
+        isValidId(vehicleId) &&
+        isValidVehicle(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerified() &&
+        isValidId(vehicleId) &&
+        isValidVehicle(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().ownerId == request.auth.uid &&
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['manufacturer', 'model', 'year', 'fuelType', 'registrationNumber', 'odometerKm', 'vin', 'isPrimary', 'updatedAt']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['connectionStatus', 'lastHealthScore', 'updatedAt']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['isPrimary', 'updatedAt'])
+            )
+          )
+        );
+
+      allow delete: if isVerified() && isValidId(vehicleId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /diagnosticScans/{scanId} {
+      allow get: if isValidId(scanId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
+
+      allow create: if isVerified() &&
+        isValidId(scanId) &&
+        isValidDiagnosticScan(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().scannedAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)) &&
+        get(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)).data.ownerId == request.auth.uid;
+
+      allow update: if isVerified() &&
+        isValidId(scanId) &&
+        isValidDiagnosticScan(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().vehicleId == existing().vehicleId &&
+        incoming().scannedAt == existing().scannedAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().ownerId == request.auth.uid &&
+            existing().status != 'resolved' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['resolvedCodes', 'status', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isVerified() && isValidId(scanId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /maintenanceRecords/{recordId} {
+      allow get: if isValidId(recordId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
+
+      allow create: if isVerified() &&
+        isValidId(recordId) &&
+        isValidMaintenanceRecord(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)) &&
+        get(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)).data.ownerId == request.auth.uid;
+
+      allow update: if isVerified() &&
+        isValidId(recordId) &&
+        isValidMaintenanceRecord(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().vehicleId == existing().vehicleId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().ownerId == request.auth.uid &&
+            existing().status != 'completed' &&
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['category', 'title', 'notes', 'dueDate', 'dueOdometerKm', 'status', 'updatedAt']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['status', 'completedAt', 'updatedAt'])
+            )
+          )
+        );
+
+      allow delete: if isVerified() && isValidId(recordId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
+
+      allow create: if isVerified() &&
+        isValidId(notificationId) &&
+        isValidNotificationItem(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerified() &&
+        isValidId(notificationId) &&
+        isValidNotificationItem(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().ownerId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['isRead', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isVerified() && isValidId(notificationId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /obdCodes/{codeId} {
+      allow get: if isValidId(codeId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isAdmin() && isValidId(codeId) && isValidObdCodeEntry(incoming()) && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(codeId) && isValidObdCodeEntry(incoming()) && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(codeId);
+    }
+
+    match /serviceCentres/{centreId} {
+      allow get: if isValidId(centreId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isAdmin() && isValidId(centreId) && isValidServiceCentre(incoming()) && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(centreId) && isValidServiceCentre(incoming()) && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(centreId);
+    }
+
+    match /serviceEnquiries/{enquiryId} {
+      allow get: if isValidId(enquiryId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
+
+      allow create: if isVerified() &&
+        isValidId(enquiryId) &&
+        isValidServiceEnquiry(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        (!('adminNote' in incoming()) || incoming().adminNote == '') &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(enquiryId) &&
+        isValidServiceEnquiry(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isValidId(enquiryId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+  }
+}
