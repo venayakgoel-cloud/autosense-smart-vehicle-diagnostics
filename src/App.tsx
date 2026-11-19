@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   onAuthStateChanged,
   reload,
@@ -6,7 +6,7 @@ import {
   signOut,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import { Loader2, MailCheck, Sparkles } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 import { AppShell } from './components/AppShell';
 import {
   DEMO_BYPASS_LOGS,
@@ -115,7 +115,7 @@ export default function App() {
     DEMO_CONNECTION_HISTORY
   );
   const [prefilledAiPrompt, setPrefilledAiPrompt] = useState<string>('');
-  const [verificationMsg, setVerificationMsg] = useState('');
+  const authWriteInProgressRef = useRef(false);
 
   useEffect(() => {
     void testFirestoreConnection();
@@ -132,26 +132,51 @@ export default function App() {
       setFirebaseUser(user);
       if (!user) {
         setUserProfile(null);
+        setVehicles([]);
+        setScans([]);
+        setBypassLogs([]);
+        setMaintenance([]);
+        setNotifications([]);
+        setEnquiries([]);
+        setActiveVehicleId('');
         setAuthReady(true);
         return;
       }
 
       setIsDemoSession(false);
-      if (user.emailVerified) {
-        try {
-          let profile = await getUserProfile(user.uid);
-          if (!profile) {
-            profile = await createUserProfile({
-              uid: user.uid,
-              fullName: user.displayName || 'AutoSense Driver',
-              email: user.email || '',
-              photoUrl: user.photoURL || '',
-            });
-          }
-          setUserProfile(profile);
-        } catch (err) {
-          console.error('Failed to load user profile:', err);
+      if (authWriteInProgressRef.current) {
+        setAuthReady(true);
+        return;
+      }
+
+      try {
+        let profile = await getUserProfile(user.uid);
+        if (!profile) {
+          profile = await createUserProfile({
+            uid: user.uid,
+            fullName: user.displayName || 'AutoSense Driver',
+            email: user.email || '',
+            photoUrl: user.photoURL || '',
+          });
         }
+        setUserProfile(profile);
+      } catch (err) {
+        console.error('Failed to load user profile:', err);
+        setUserProfile({
+          uid: user.uid,
+          fullName: user.displayName || 'AutoSense Driver',
+          email: user.email || '',
+          phone: '',
+          city: '',
+          photoUrl: user.photoURL || '',
+          role: 'user',
+          preferences: {
+            emailAlerts: true,
+            pushAlerts: true,
+            maintenanceReminders: true,
+            shareDiagnosticTelemetry: false,
+          },
+        });
       }
       setAuthReady(true);
     });
@@ -159,9 +184,9 @@ export default function App() {
     return () => unsubAuth();
   }, []);
 
-  // Firestore real-time subscriptions when verified authenticated user is active
+  // Firestore real-time subscriptions when authenticated user is active
   useEffect(() => {
-    if (!firebaseUser || !firebaseUser.emailVerified || isDemoSession) {
+    if (!firebaseUser || isDemoSession) {
       return;
     }
 
@@ -646,11 +671,13 @@ export default function App() {
       setBypassLogs([]);
       setMaintenance([]);
       setNotifications([]);
+      setEnquiries([]);
+      setActiveVehicleId('');
       setPublicRoute('landing');
       return;
     }
     await signOut(auth);
-    setPublicRoute('landing');
+    setPublicRoute('signin');
   };
 
   if (!authReady) {
@@ -658,70 +685,6 @@ export default function App() {
       <div className="min-h-screen bg-[#060A13] text-slate-200 flex items-center justify-center gap-3">
         <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
         <span className="text-sm">Loading AutoSense...</span>
-      </div>
-    );
-  }
-
-  // Signed in with unverified email/password account
-  if (firebaseUser && !firebaseUser.emailVerified && !isDemoSession) {
-    return (
-      <div className="min-h-screen bg-[#060A13] text-slate-100 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-[#0F172A] border border-slate-800 rounded-2xl p-6 space-y-4">
-          <div className="flex items-center gap-2.5 text-blue-400">
-            <MailCheck className="w-6 h-6" />
-            <h1 className="font-display font-bold text-lg text-white">Verify Your Email</h1>
-          </div>
-          <p className="text-sm text-slate-300 leading-relaxed">
-            We sent a verification link to <strong>{firebaseUser.email}</strong>. Please click the
-            link in your inbox to activate cloud storage for your vehicles and diagnostic reports.
-          </p>
-          {verificationMsg && (
-            <p className="text-xs text-blue-300 bg-blue-500/10 border border-blue-500/30 rounded-xl p-3">
-              {verificationMsg}
-            </p>
-          )}
-          <div className="flex flex-col gap-2.5 pt-2">
-            <button
-              type="button"
-              onClick={async () => {
-                await reload(firebaseUser);
-                if (auth.currentUser?.emailVerified) {
-                  setFirebaseUser({ ...auth.currentUser });
-                  window.location.reload();
-                } else {
-                  setVerificationMsg('Email is not verified yet. Please check your inbox or spam folder.');
-                }
-              }}
-              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white min-h-[44px]"
-            >
-              I Have Verified My Email
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                await sendEmailVerification(firebaseUser);
-                setVerificationMsg('Verification email resent.');
-              }}
-              className="w-full py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-xs font-medium text-slate-200 min-h-[40px]"
-            >
-              Resend Verification Email
-            </button>
-            <button
-              type="button"
-              onClick={enterDemoSession}
-              className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-white min-h-[40px]"
-            >
-              Explore Demo Mode Meanwhile
-            </button>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="text-xs text-slate-400 hover:text-white pt-1"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
       </div>
     );
   }
@@ -741,7 +704,16 @@ export default function App() {
         route={publicRoute}
         onNavigate={(r) => setPublicRoute(r)}
         onBackToLanding={() => setPublicRoute('landing')}
-        onEnterDemo={enterDemoSession}
+        onBeginAuthWrite={() => {
+          authWriteInProgressRef.current = true;
+        }}
+        onCompleteAuthProfile={(profile) => {
+          setUserProfile(profile);
+          setActiveSection('dashboard');
+        }}
+        onEndAuthWrite={() => {
+          authWriteInProgressRef.current = false;
+        }}
         oobCode={oobCode}
       />
     );
@@ -918,6 +890,26 @@ export default function App() {
           userProfile={activeProfile}
           vehicles={vehicles}
           isDemoSession={isDemoSession}
+          emailVerified={Boolean(firebaseUser?.emailVerified)}
+          onResendVerification={
+            firebaseUser && !firebaseUser.emailVerified
+              ? async () => {
+                  await sendEmailVerification(firebaseUser);
+                }
+              : undefined
+          }
+          onRefreshVerification={
+            firebaseUser && !firebaseUser.emailVerified
+              ? async () => {
+                  await reload(firebaseUser);
+                  if (auth.currentUser) {
+                    setFirebaseUser({ ...auth.currentUser });
+                    return Boolean(auth.currentUser.emailVerified);
+                  }
+                  return false;
+                }
+              : undefined
+          }
           onUpdateProfile={handleUpdateProfile}
           onSubmitFeedback={async (subject, message) => {
             await handleSubmitEnquiry({

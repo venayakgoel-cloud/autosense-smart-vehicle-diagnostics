@@ -289,7 +289,7 @@ service cloud.firestore {
       allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
       allow list: if isTokenAdmin() || (isSignedIn() && existing().uid == request.auth.uid);
 
-      allow create: if isVerified() &&
+      allow create: if isSignedIn() &&
         isValidId(userId) &&
         isValidUserProfile(incoming(), userId) &&
         incoming().createdAt == request.time &&
@@ -299,7 +299,7 @@ service cloud.firestore {
           isAdmin()
         );
 
-      allow update: if isVerified() &&
+      allow update: if isSignedIn() &&
         isValidId(userId) &&
         isValidUserProfile(incoming(), userId) &&
         incoming().uid == existing().uid &&
@@ -329,14 +329,14 @@ service cloud.firestore {
       allow get: if isValidId(vehicleId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
 
-      allow create: if isVerified() &&
+      allow create: if isSignedIn() &&
         isValidId(vehicleId) &&
         isValidVehicle(incoming()) &&
         incoming().ownerId == request.auth.uid &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
 
-      allow update: if isVerified() &&
+      allow update: if isSignedIn() &&
         isValidId(vehicleId) &&
         isValidVehicle(incoming()) &&
         incoming().ownerId == existing().ownerId &&
@@ -354,14 +354,14 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if isVerified() && isValidId(vehicleId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && isValidId(vehicleId) && (existing().ownerId == request.auth.uid || isAdmin());
     }
 
     match /diagnosticScans/{scanId} {
       allow get: if isValidId(scanId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
 
-      allow create: if isVerified() &&
+      allow create: if isSignedIn() &&
         isValidId(scanId) &&
         isValidDiagnosticScan(incoming()) &&
         incoming().ownerId == request.auth.uid &&
@@ -370,7 +370,7 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)) &&
         get(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)).data.ownerId == request.auth.uid;
 
-      allow update: if isVerified() &&
+      allow update: if isSignedIn() &&
         isValidId(scanId) &&
         isValidDiagnosticScan(incoming()) &&
         incoming().ownerId == existing().ownerId &&
@@ -386,14 +386,14 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if isVerified() && isValidId(scanId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && isValidId(scanId) && (existing().ownerId == request.auth.uid || isAdmin());
     }
 
     match /maintenanceRecords/{recordId} {
       allow get: if isValidId(recordId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
 
-      allow create: if isVerified() &&
+      allow create: if isSignedIn() &&
         isValidId(recordId) &&
         isValidMaintenanceRecord(incoming()) &&
         incoming().ownerId == request.auth.uid &&
@@ -402,7 +402,7 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)) &&
         get(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)).data.ownerId == request.auth.uid;
 
-      allow update: if isVerified() &&
+      allow update: if isSignedIn() &&
         isValidId(recordId) &&
         isValidMaintenanceRecord(incoming()) &&
         incoming().ownerId == existing().ownerId &&
@@ -421,21 +421,21 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if isVerified() && isValidId(recordId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && isValidId(recordId) && (existing().ownerId == request.auth.uid || isAdmin());
     }
 
     match /notifications/{notificationId} {
       allow get: if isValidId(notificationId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
 
-      allow create: if isVerified() &&
+      allow create: if isSignedIn() &&
         isValidId(notificationId) &&
         isValidNotificationItem(incoming()) &&
         incoming().ownerId == request.auth.uid &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
 
-      allow update: if isVerified() &&
+      allow update: if isSignedIn() &&
         isValidId(notificationId) &&
         isValidNotificationItem(incoming()) &&
         incoming().ownerId == existing().ownerId &&
@@ -449,7 +449,7 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if isVerified() && isValidId(notificationId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && isValidId(notificationId) && (existing().ownerId == request.auth.uid || isAdmin());
     }
 
     match /obdCodes/{codeId} {
@@ -472,7 +472,7 @@ service cloud.firestore {
       allow get: if isValidId(enquiryId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
 
-      allow create: if isVerified() &&
+      allow create: if isSignedIn() &&
         isValidId(enquiryId) &&
         isValidServiceEnquiry(incoming()) &&
         incoming().ownerId == request.auth.uid &&
@@ -488,14 +488,14 @@ service cloud.firestore {
         incoming().createdAt == existing().createdAt &&
         incoming().updatedAt == request.time;
 
-      allow delete: if isValidId(enquiryId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow delete: if isValidId(enquiryId) && (isAdmin() || (isSignedIn() && existing().ownerId == request.auth.uid));
     }
 
     match /bypassLogs/{logId} {
       allow get: if isValidId(logId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
 
-      allow create: if isVerified() &&
+      allow create: if isSignedIn() &&
         isValidId(logId) &&
         isValidBypassActionLog(incoming()) &&
         incoming().ownerId == request.auth.uid &&

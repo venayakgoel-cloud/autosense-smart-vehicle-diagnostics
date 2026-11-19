@@ -9,25 +9,117 @@ import {
   updateProfile,
 } from 'firebase/auth';
 import { ArrowLeft, Car, CheckCircle2, KeyRound, Lock, Mail, MapPin, Phone, User } from 'lucide-react';
-import { auth, googleProvider } from '../lib/firebase';
+import { auth, firebaseConfig, googleProvider } from '../lib/firebase';
 import { createUserProfile, createVehicle, getUserProfile } from '../services/firestoreService';
 import { AutoSenseLogo } from '../components/AutoSenseLogo';
 import type { PublicRoute } from './LandingPage';
-import type { FuelType } from '../types/autosense';
+import type { FuelType, UserProfile } from '../types/autosense';
 
 interface AuthPagesProps {
   route: Exclude<PublicRoute, 'landing'>;
   onNavigate: (route: PublicRoute) => void;
   onBackToLanding: () => void;
-  onEnterDemo: () => void;
+  onBeginAuthWrite: () => void;
+  onCompleteAuthProfile: (profile: UserProfile) => void;
+  onEndAuthWrite: () => void;
   oobCode?: string;
+}
+
+function buildFallbackProfile(params: {
+  uid: string;
+  fullName: string;
+  email: string;
+  phone?: string;
+  city?: string;
+  photoUrl?: string;
+}): UserProfile {
+  return {
+    uid: params.uid,
+    fullName: params.fullName || 'AutoSense Driver',
+    email: params.email,
+    phone: params.phone ?? '',
+    city: params.city ?? '',
+    photoUrl: params.photoUrl ?? '',
+    role: 'user',
+    preferences: {
+      emailAlerts: true,
+      pushAlerts: true,
+      maintenanceReminders: true,
+      shareDiagnosticTelemetry: false,
+    },
+  };
+}
+
+export function formatFirebaseAuthError(err: unknown): string {
+  const code =
+    typeof err === 'object' && err !== null && 'code' in err
+      ? String((err as { code?: unknown }).code ?? '')
+      : '';
+  const raw = err instanceof Error ? err.message : String(err);
+  const combined = `${code} ${raw}`;
+
+  if (combined.includes('auth/operation-not-allowed') || combined.includes('PASSWORD_LOGIN_DISABLED')) {
+    return `Email/Password authentication is currently disabled in Firebase Console for project "${firebaseConfig.projectId}". Enable it under Firebase Console → Authentication → Sign-in method → Email/Password, or use Google Sign-In below.`;
+  }
+  if (combined.includes('auth/wrong-password')) {
+    return 'Incorrect password. Please double-check your password or click Forgot password.';
+  }
+  if (combined.includes('auth/user-not-found')) {
+    return 'No account is registered with this email address. Please create an account first.';
+  }
+  if (
+    combined.includes('auth/invalid-credential') ||
+    combined.includes('auth/invalid-login-credentials')
+  ) {
+    return 'Invalid email or password, or no account exists with these credentials. Check your details or create an account.';
+  }
+  if (combined.includes('auth/email-already-in-use')) {
+    return 'An account with this email already exists. Please sign in with your existing password instead.';
+  }
+  if (combined.includes('auth/invalid-email')) {
+    return 'Please enter a valid email address.';
+  }
+  if (combined.includes('auth/weak-password')) {
+    return 'Password is too weak. Please choose a password of at least 6 characters.';
+  }
+  if (combined.includes('auth/too-many-requests')) {
+    return 'Too many unsuccessful sign-in attempts. Please wait a moment or reset your password.';
+  }
+  if (combined.includes('auth/user-disabled')) {
+    return 'This account has been disabled. Please contact support.';
+  }
+  if (combined.includes('auth/unauthorized-domain')) {
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+    return `This domain (${host}) is not authorized in Firebase Authentication. Add "${host}" under Firebase Console → Authentication → Settings → Authorized domains.`;
+  }
+  if (combined.includes('auth/popup-blocked')) {
+    return 'Google sign-in popup was blocked by your browser. Please allow popups for this site and try again.';
+  }
+  if (
+    combined.includes('auth/popup-closed-by-user') ||
+    combined.includes('auth/cancelled-popup-request')
+  ) {
+    return 'Google sign-in popup was closed before completing.';
+  }
+  if (combined.includes('auth/account-exists-with-different-credential')) {
+    return 'An account already exists with this email using a different sign-in method. Sign in with your original method first.';
+  }
+  if (combined.includes('auth/network-request-failed')) {
+    return 'Network error while connecting to Firebase Authentication. Check your internet connection and try again.';
+  }
+  if (combined.includes('auth/expired-action-code') || combined.includes('auth/invalid-action-code')) {
+    return 'This password reset code is invalid or has expired. Please request a new reset link.';
+  }
+  return raw;
 }
 
 export function AuthPages({
   route,
   onNavigate,
   onBackToLanding,
-  onEnterDemo,
+  onBeginAuthWrite,
+  onCompleteAuthProfile,
+  onEndAuthWrite,
   oobCode,
 }: AuthPagesProps) {
   const [email, setEmail] = useState('');
@@ -48,44 +140,37 @@ export function AuthPages({
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
 
-  const formatAuthError = (err: unknown): string => {
-    const raw = err instanceof Error ? err.message : String(err);
-    if (raw.includes('auth/operation-not-allowed')) {
-      return 'Email/Password sign-in is not yet enabled in the Firebase Console (Authentication → Sign-in method → Enable Email/Password). You can sign in immediately with Google below or launch Interactive Demo Mode.';
-    }
-    if (raw.includes('auth/invalid-credential') || raw.includes('auth/wrong-password')) {
-      return 'Incorrect email or password. Please double-check your credentials or reset your password.';
-    }
-    if (raw.includes('auth/email-already-in-use')) {
-      return 'An account with this email already exists. Try signing in instead.';
-    }
-    if (raw.includes('auth/weak-password')) {
-      return 'Please choose a stronger password (at least 6 characters).';
-    }
-    if (raw.includes('auth/popup-closed-by-user')) {
-      return 'Google sign-in popup was closed before completing.';
-    }
-    return raw;
-  };
-
   const handleGoogleSignIn = async () => {
     setErrorMsg('');
     setInfoMsg('');
     setLoading(true);
+    onBeginAuthWrite();
     try {
       const cred = await signInWithPopup(auth, googleProvider);
-      const existing = await getUserProfile(cred.user.uid);
-      if (!existing) {
-        await createUserProfile({
+      let profile: UserProfile | null = null;
+      try {
+        profile = await getUserProfile(cred.user.uid);
+        if (!profile) {
+          profile = await createUserProfile({
+            uid: cred.user.uid,
+            fullName: cred.user.displayName || 'AutoSense Driver',
+            email: cred.user.email || '',
+            photoUrl: cred.user.photoURL || '',
+          });
+        }
+      } catch {
+        profile = buildFallbackProfile({
           uid: cred.user.uid,
           fullName: cred.user.displayName || 'AutoSense Driver',
           email: cred.user.email || '',
           photoUrl: cred.user.photoURL || '',
         });
       }
+      onCompleteAuthProfile(profile);
     } catch (err) {
-      setErrorMsg(formatAuthError(err));
+      setErrorMsg(formatFirebaseAuthError(err));
     } finally {
+      onEndAuthWrite();
       setLoading(false);
     }
   };
@@ -94,11 +179,17 @@ export function AuthPages({
     e.preventDefault();
     setErrorMsg('');
     setInfoMsg('');
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setErrorMsg('Please enter both your email address and password.');
+      return;
+    }
+
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      await signInWithEmailAndPassword(auth, trimmedEmail, password);
     } catch (err) {
-      setErrorMsg(formatAuthError(err));
+      setErrorMsg(formatFirebaseAuthError(err));
     } finally {
       setLoading(false);
     }
@@ -109,33 +200,46 @@ export function AuthPages({
     setErrorMsg('');
     setInfoMsg('');
 
-    if (!fullName.trim() || !email.trim() || !phone.trim() || !city.trim() || password.length < 6) {
-      setErrorMsg('Please fill in your full name, email, phone number, city, and a password of at least 6 characters.');
+    const trimmedEmail = email.trim();
+    const trimmedName = fullName.trim();
+    const trimmedPhone = phone.trim();
+    const trimmedCity = city.trim();
+
+    if (!trimmedName || !trimmedEmail || !trimmedPhone || !trimmedCity || password.length < 6) {
+      setErrorMsg(
+        'Please fill in your full name, email, phone number, city, and a password of at least 6 characters.'
+      );
       return;
     }
 
     setLoading(true);
+    onBeginAuthWrite();
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      await updateProfile(cred.user, { displayName: fullName.trim() });
+      const cred = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
       try {
-        await sendEmailVerification(cred.user);
+        await updateProfile(cred.user, { displayName: trimmedName });
       } catch {
-        // Non-blocking verification email attempt
+        // Non-blocking profile displayName sync
       }
-      if (cred.user.emailVerified) {
-        await createUserProfile({
+
+      void sendEmailVerification(cred.user).catch(() => {
+        // Non-blocking verification email
+      });
+
+      let profile: UserProfile;
+      try {
+        profile = await createUserProfile({
           uid: cred.user.uid,
-          fullName: fullName.trim(),
-          email: email.trim(),
-          phone: phone.trim(),
-          city: city.trim(),
+          fullName: trimmedName,
+          email: trimmedEmail,
+          phone: trimmedPhone,
+          city: trimmedCity,
         });
         if (includeVehicle && manufacturer.trim() && model.trim() && regNumber.trim()) {
           await createVehicle(cred.user.uid, {
             manufacturer: manufacturer.trim(),
             model: model.trim(),
-            year: Number(year) || 2022,
+            year: Math.min(2030, Math.max(1980, Number(year) || 2022)),
             fuelType,
             registrationNumber: regNumber.trim().toUpperCase(),
             odometerKm: 0,
@@ -144,14 +248,20 @@ export function AuthPages({
             lastHealthScore: 95,
           });
         }
-      } else {
-        setInfoMsg(
-          'Account created! Please check your inbox and verify your email address before saving records to the cloud.'
-        );
+      } catch {
+        profile = buildFallbackProfile({
+          uid: cred.user.uid,
+          fullName: trimmedName,
+          email: trimmedEmail,
+          phone: trimmedPhone,
+          city: trimmedCity,
+        });
       }
+      onCompleteAuthProfile(profile);
     } catch (err) {
-      setErrorMsg(formatAuthError(err));
+      setErrorMsg(formatFirebaseAuthError(err));
     } finally {
+      onEndAuthWrite();
       setLoading(false);
     }
   };
@@ -168,10 +278,10 @@ export function AuthPages({
     try {
       await sendPasswordResetEmail(auth, email.trim());
       setInfoMsg(
-        `Password reset instructions have been sent to ${email.trim()}. Once you receive your reset code, you can also complete the reset on the Reset Password screen.`
+        `Password reset instructions have been sent to ${email.trim()}. Check your inbox (and spam folder) for the reset link.`
       );
     } catch (err) {
-      setErrorMsg(formatAuthError(err));
+      setErrorMsg(formatFirebaseAuthError(err));
     } finally {
       setLoading(false);
     }
@@ -182,7 +292,9 @@ export function AuthPages({
     setErrorMsg('');
     setInfoMsg('');
     if (!resetCode.trim() || newPassword.length < 6) {
-      setErrorMsg('Provide the reset code from your email link and a new password of at least 6 characters.');
+      setErrorMsg(
+        'Provide the reset code from your email link and a new password of at least 6 characters.'
+      );
       return;
     }
     setLoading(true);
@@ -190,7 +302,7 @@ export function AuthPages({
       await confirmPasswordReset(auth, resetCode.trim(), newPassword);
       setInfoMsg('Your password has been updated. You can now sign in with your new password.');
     } catch (err) {
-      setErrorMsg(formatAuthError(err));
+      setErrorMsg(formatFirebaseAuthError(err));
     } finally {
       setLoading(false);
     }
@@ -289,14 +401,20 @@ export function AuthPages({
             </h1>
             <p className="text-sm text-slate-400">
               {route === 'signin' && 'Access your garage, diagnostic history, and vehicle health.'}
-              {route === 'signup' && 'Monitor your vehicle health and decode trouble codes in plain English.'}
-              {route === 'forgot' && 'Enter your account email and we will send a password reset link.'}
-              {route === 'reset' && 'Enter the verification code from your reset email and a new password.'}
+              {route === 'signup' &&
+                'Monitor your vehicle health and decode trouble codes in plain English.'}
+              {route === 'forgot' &&
+                'Enter your account email and we will send a password reset link.'}
+              {route === 'reset' &&
+                'Enter the verification code from your reset email and a new password.'}
             </p>
           </div>
 
           {errorMsg && (
-            <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs sm:text-sm text-red-200 leading-relaxed">
+            <div
+              role="alert"
+              className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs sm:text-sm text-red-200 leading-relaxed"
+            >
               {errorMsg}
             </div>
           )}
@@ -314,7 +432,7 @@ export function AuthPages({
               <button
                 type="button"
                 disabled={loading}
-                onClick={handleGoogleSignIn}
+                onClick={() => void handleGoogleSignIn()}
                 className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-semibold text-sm transition-colors disabled:opacity-60 min-h-[44px]"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
@@ -348,14 +466,17 @@ export function AuthPages({
 
           {/* SIGN IN FORM */}
           {route === 'signin' && (
-            <form onSubmit={handleEmailSignIn} className="space-y-4">
+            <form onSubmit={(e) => void handleEmailSignIn(e)} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Email address</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Email address
+                </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                   <input
                     type="email"
                     required
+                    autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="driver@example.com"
@@ -380,6 +501,7 @@ export function AuthPages({
                   <input
                     type="password"
                     required
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter password"
@@ -400,15 +522,18 @@ export function AuthPages({
 
           {/* SIGN UP FORM */}
           {route === 'signup' && (
-            <form onSubmit={handleSignUp} className="space-y-4">
+            <form onSubmit={(e) => void handleSignUp(e)} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">Full name</label>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Full name
+                  </label>
                   <div className="relative">
                     <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                     <input
                       type="text"
                       required
+                      autoComplete="name"
                       maxLength={100}
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
@@ -418,12 +543,15 @@ export function AuthPages({
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">Phone number</label>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Phone number
+                  </label>
                   <div className="relative">
                     <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                     <input
                       type="tel"
                       required
+                      autoComplete="tel"
                       maxLength={30}
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
@@ -436,12 +564,15 @@ export function AuthPages({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">Email address</label>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Email address
+                  </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                     <input
                       type="email"
                       required
+                      autoComplete="email"
                       maxLength={150}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
@@ -474,6 +605,7 @@ export function AuthPages({
                   <input
                     type="password"
                     required
+                    autoComplete="new-password"
                     minLength={6}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -578,9 +710,11 @@ export function AuthPages({
 
           {/* FORGOT PASSWORD FORM */}
           {route === 'forgot' && (
-            <form onSubmit={handleForgotPassword} className="space-y-4">
+            <form onSubmit={(e) => void handleForgotPassword(e)} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Account email</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Account email
+                </label>
                 <input
                   type="email"
                   required
@@ -609,7 +743,7 @@ export function AuthPages({
 
           {/* RESET PASSWORD FORM */}
           {route === 'reset' && (
-            <form onSubmit={handleConfirmReset} className="space-y-4">
+            <form onSubmit={(e) => void handleConfirmReset(e)} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
                   Reset verification code (oobCode)
@@ -627,7 +761,9 @@ export function AuthPages({
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">New password</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  New password
+                </label>
                 <input
                   type="password"
                   required
@@ -649,7 +785,7 @@ export function AuthPages({
           )}
 
           {/* Footer Switches */}
-          <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400">
+          <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3 text-xs text-slate-400">
             <div>
               {route === 'signin' ? (
                 <>
@@ -683,14 +819,6 @@ export function AuthPages({
                 </>
               )}
             </div>
-
-            <button
-              type="button"
-              onClick={onEnterDemo}
-              className="text-slate-300 hover:text-white font-medium underline-offset-4 hover:underline text-left sm:text-right"
-            >
-              Try Demo Mode instead →
-            </button>
           </div>
         </div>
       </div>

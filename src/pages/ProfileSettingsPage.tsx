@@ -9,6 +9,9 @@ interface ProfileSettingsPageProps {
   userProfile: UserProfile;
   vehicles: Vehicle[];
   isDemoSession: boolean;
+  emailVerified?: boolean;
+  onResendVerification?: () => Promise<void>;
+  onRefreshVerification?: () => Promise<boolean>;
   onUpdateProfile: (
     updates: Partial<Pick<UserProfile, 'fullName' | 'phone' | 'city' | 'photoUrl' | 'preferences'>>
   ) => Promise<void>;
@@ -22,6 +25,9 @@ export function ProfileSettingsPage({
   userProfile,
   vehicles,
   isDemoSession,
+  emailVerified = false,
+  onResendVerification,
+  onRefreshVerification,
   onUpdateProfile,
   onSubmitFeedback,
   onNavigate,
@@ -286,6 +292,51 @@ export function ProfileSettingsPage({
                 Owner-scoped Firestore isolation
               </span>
             </div>
+
+            {!isDemoSession && (
+              <div className="pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="text-slate-400">
+                  Email verification:{' '}
+                  <strong className={emailVerified ? 'text-emerald-400' : 'text-amber-300'}>
+                    {emailVerified ? 'Verified' : 'Unverified (optional)'}
+                  </strong>
+                </span>
+                {!emailVerified && onResendVerification && onRefreshVerification && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await onResendVerification();
+                          setStatusMsg(`Verification link sent to ${userProfile.email}.`);
+                        } catch (err) {
+                          setStatusMsg(
+                            err instanceof Error ? err.message : 'Unable to send verification email.'
+                          );
+                        }
+                      }}
+                      className="text-blue-400 hover:underline"
+                    >
+                      Resend verification email
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const verified = await onRefreshVerification();
+                        setStatusMsg(
+                          verified
+                            ? 'Email verification confirmed.'
+                            : 'Email is not verified yet. Check your inbox.'
+                        );
+                      }}
+                      className="text-slate-300 hover:text-white"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <form
