@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import type { DiagnosticScan, ObdCodeEntry, Vehicle } from '../types/autosense';
+import type { BypassActionLog, DiagnosticScan, ObdCodeEntry, Vehicle } from '../types/autosense';
 import { findObdCodeDetails } from '../data/obdCodes';
 
 export function downloadDiagnosticPdf(
@@ -135,3 +135,86 @@ export function downloadDiagnosticPdf(
   const safeFile = scan.vehicleLabel.replace(/[^a-zA-Z0-9_-]+/g, '_');
   doc.save(`AutoSense_Report_${safeFile}.pdf`);
 }
+
+export function downloadBypassAuditPdf(
+  logs: BypassActionLog[],
+  customCodes: ObdCodeEntry[] = []
+): void {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const margin = 44;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const maxLineWidth = pageWidth - margin * 2;
+  let y = 48;
+
+  const checkPageBreak = (neededHeight: number) => {
+    if (y + neededHeight > 780) {
+      doc.addPage();
+      y = 48;
+    }
+  };
+
+  doc.setFillColor(11, 17, 32);
+  doc.rect(0, 0, pageWidth, 82, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text('AutoSense Mechanic Audit — Bypass Actions Log', margin, 36);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    `Generated: ${new Date().toLocaleString()}   |   Total Events: ${logs.length}`,
+    margin,
+    56
+  );
+
+  y = 108;
+
+  if (logs.length === 0) {
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(11);
+    doc.text('No controlled bypass or Mode $04 reset actions recorded.', margin, y);
+  } else {
+    for (const log of logs) {
+      checkPageBreak(150);
+      const ts = log.occurredAtIso ? new Date(log.occurredAtIso).toLocaleString() : 'Recorded';
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(
+        `${ts} — ${log.vehicleLabel}${log.isDemoData ? ' [DEMO DATA]' : ''}`,
+        margin,
+        y
+      );
+      y += 15;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      const sensorNames = log.modifiedSensors
+        .map((c) => `${c} (${findObdCodeDetails(c, customCodes).name})`)
+        .join('; ');
+      const lines = [
+        `Action: ${log.actionType === 'mode04_reset' ? 'Mode $04 Indicator Reset' : 'Controlled Transit Bypass'} | Profile: ${log.transitProfileLabel} (${log.maxSpeedKmh} km/h, ${log.maxRpm} RPM)`,
+        `Modified Sensors: ${sensorNames}`,
+        `Blocked High-Risk Sensors: ${log.blockedSensors.length > 0 ? log.blockedSensors.join(', ') : 'None'}`,
+        `Vehicle Status Snapshot: Health ${log.vehicleStatusSnapshot.overallHealthScore}/100, Engine ${log.vehicleStatusSnapshot.engineHealthScore}/100, Coolant ${log.vehicleStatusSnapshot.coolantTempC} C, Battery ${log.vehicleStatusSnapshot.batteryVoltage > 0 ? `${log.vehicleStatusSnapshot.batteryVoltage}V` : 'Unsupported'}, Odometer ${log.vehicleStatusSnapshot.odometerKm.toLocaleString()} km`,
+      ];
+      for (const line of lines) {
+        const wrapped = doc.splitTextToSize(line, maxLineWidth);
+        doc.text(wrapped, margin, y);
+        y += wrapped.length * 12 + 2;
+      }
+
+      const notes = doc.splitTextToSize(`Mechanic Note: ${log.notes}`, maxLineWidth);
+      doc.text(notes, margin, y);
+      y += notes.length * 12 + 12;
+
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 14;
+    }
+  }
+
+  doc.save('AutoSense_Bypass_Actions_Audit.pdf');
+}
+

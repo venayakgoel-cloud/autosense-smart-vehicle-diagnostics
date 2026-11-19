@@ -100,6 +100,36 @@ export interface DiagnosticScan {
   updatedAt?: unknown;
 }
 
+export interface VehicleStatusSnapshot {
+  overallHealthScore: number;
+  engineHealthScore: number;
+  batteryVoltage: number;
+  coolantTempC: number;
+  fuelTrimPct: number;
+  odometerKm: number;
+  emissionReadiness: 'Ready' | 'Pending' | 'Unsupported';
+  connectionMode: ConnectionMode;
+}
+
+export interface BypassActionLog {
+  id: string;
+  ownerId: string;
+  vehicleId: string;
+  vehicleLabel: string;
+  scanId: string;
+  actionType: 'controlled_bypass' | 'mode04_reset';
+  modifiedSensors: string[];
+  blockedSensors: string[];
+  transitProfileLabel: string;
+  maxSpeedKmh: number;
+  maxRpm: number;
+  vehicleStatusSnapshot: VehicleStatusSnapshot;
+  isDemoData: boolean;
+  notes: string;
+  occurredAtIso?: string;
+  occurredAt?: unknown;
+}
+
 export interface MaintenanceRecord {
   id: string;
   ownerId: string;
@@ -130,16 +160,36 @@ export interface NotificationItem {
   updatedAt?: unknown;
 }
 
+export type TransitEligibility = 'Clearable' | 'EcuLimpHome' | 'HardwareLockout';
+
+export type SensorBypassTier = 'LowRiskEligible' | 'ModerateLimpCapped' | 'VeryHighRiskBlocked';
+
+export type TransitControlProfileId = 'strict_eco' | 'city_crawl' | 'direct_service';
+
+export interface TransitControlProfile {
+  id: TransitControlProfileId;
+  label: string;
+  maxSpeedKmh: number;
+  maxRpm: number;
+  maxThrottlePct: number;
+  maxDistanceKm: number;
+  description: string;
+  requiresAllClearable?: boolean;
+}
+
 export interface ObdCodeEntry {
   id?: string;
   code: string;
   name: string;
+  brand?: string;
   category: ObdCategory;
   severity: SeverityLevel;
   meaning: string;
   possibleCauses: string[];
   nextSteps: string;
   mechanicAdvice: string;
+  transitEligibility?: TransitEligibility;
+  transitNote?: string;
   isCustomFromAdmin?: boolean;
 }
 

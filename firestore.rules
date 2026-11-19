@@ -235,6 +235,52 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidBypassActionLog(data) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'vehicleLabel', 'scanId', 'actionType',
+          'modifiedSensors', 'blockedSensors', 'transitProfileLabel',
+          'maxSpeedKmh', 'maxRpm', 'vehicleStatusSnapshot', 'isDemoData',
+          'notes', 'occurredAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'vehicleLabel', 'scanId', 'actionType',
+          'modifiedSensors', 'blockedSensors', 'transitProfileLabel',
+          'maxSpeedKmh', 'maxRpm', 'vehicleStatusSnapshot', 'isDemoData',
+          'notes', 'occurredAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        isValidId(data.vehicleId) &&
+        data.vehicleLabel is string && data.vehicleLabel.size() >= 1 && data.vehicleLabel.size() <= 120 &&
+        isValidId(data.scanId) &&
+        data.actionType in ['controlled_bypass', 'mode04_reset'] &&
+        isStringList(data.modifiedSensors, 20, 12) &&
+        data.modifiedSensors.size() >= 1 &&
+        isStringList(data.blockedSensors, 20, 12) &&
+        data.transitProfileLabel is string && data.transitProfileLabel.size() >= 1 && data.transitProfileLabel.size() <= 80 &&
+        data.maxSpeedKmh is number && data.maxSpeedKmh >= 0 && data.maxSpeedKmh <= 150 &&
+        data.maxRpm is number && data.maxRpm >= 0 && data.maxRpm <= 8000 &&
+        data.vehicleStatusSnapshot is map &&
+        data.vehicleStatusSnapshot.keys().hasAll([
+          'overallHealthScore', 'engineHealthScore', 'batteryVoltage',
+          'coolantTempC', 'fuelTrimPct', 'odometerKm', 'emissionReadiness', 'connectionMode'
+        ]) &&
+        data.vehicleStatusSnapshot.keys().hasOnly([
+          'overallHealthScore', 'engineHealthScore', 'batteryVoltage',
+          'coolantTempC', 'fuelTrimPct', 'odometerKm', 'emissionReadiness', 'connectionMode'
+        ]) &&
+        data.vehicleStatusSnapshot.overallHealthScore is number && data.vehicleStatusSnapshot.overallHealthScore >= 0 && data.vehicleStatusSnapshot.overallHealthScore <= 100 &&
+        data.vehicleStatusSnapshot.engineHealthScore is number && data.vehicleStatusSnapshot.engineHealthScore >= 0 && data.vehicleStatusSnapshot.engineHealthScore <= 100 &&
+        data.vehicleStatusSnapshot.batteryVoltage is number && data.vehicleStatusSnapshot.batteryVoltage >= -1 && data.vehicleStatusSnapshot.batteryVoltage <= 30 &&
+        data.vehicleStatusSnapshot.coolantTempC is number && data.vehicleStatusSnapshot.coolantTempC >= -50 && data.vehicleStatusSnapshot.coolantTempC <= 220 &&
+        data.vehicleStatusSnapshot.fuelTrimPct is number && data.vehicleStatusSnapshot.fuelTrimPct >= -50 && data.vehicleStatusSnapshot.fuelTrimPct <= 50 &&
+        data.vehicleStatusSnapshot.odometerKm is number && data.vehicleStatusSnapshot.odometerKm >= 0 && data.vehicleStatusSnapshot.odometerKm <= 2000000 &&
+        data.vehicleStatusSnapshot.emissionReadiness in ['Ready', 'Pending', 'Unsupported'] &&
+        data.vehicleStatusSnapshot.connectionMode in ['DEMO_OBD', 'BLUETOOTH', 'WIFI'] &&
+        data.isDemoData is bool &&
+        data.notes is string && data.notes.size() >= 1 && data.notes.size() <= 500 &&
+        data.occurredAt is timestamp;
+    }
+
     // =========================================================
     // Collection Match Blocks
     // =========================================================
@@ -443,6 +489,24 @@ service cloud.firestore {
         incoming().updatedAt == request.time;
 
       allow delete: if isValidId(enquiryId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    match /bypassLogs/{logId} {
+      allow get: if isValidId(logId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isTokenAdmin());
+
+      allow create: if isVerified() &&
+        isValidId(logId) &&
+        isValidBypassActionLog(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().occurredAt == request.time &&
+        exists(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)) &&
+        get(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)).data.ownerId == request.auth.uid &&
+        exists(/databases/$(database)/documents/diagnosticScans/$(incoming().scanId)) &&
+        get(/databases/$(database)/documents/diagnosticScans/$(incoming().scanId)).data.ownerId == request.auth.uid;
+
+      allow update: if false;
+      allow delete: if isValidId(logId) && isAdmin();
     }
   }
 }

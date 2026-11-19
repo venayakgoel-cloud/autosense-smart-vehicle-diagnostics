@@ -1,63 +1,289 @@
 import { useMemo, useState } from 'react';
-import { CheckCircle2, Download, Eye, History, X } from 'lucide-react';
+import {
+  CheckCircle2,
+  ClipboardList,
+  Download,
+  Eye,
+  History,
+  Lock,
+  Sliders,
+  X,
+} from 'lucide-react';
 import { findObdCodeDetails, SEVERITY_GUIDANCE } from '../data/obdCodes';
-import { downloadDiagnosticPdf } from '../services/pdfReport';
-import type { DiagnosticScan, ObdCodeEntry, Vehicle } from '../types/autosense';
+import { downloadBypassAuditPdf, downloadDiagnosticPdf } from '../services/pdfReport';
+import type {
+  BypassActionLog,
+  DiagnosticScan,
+  ObdCodeEntry,
+  Vehicle,
+} from '../types/autosense';
 
 interface HistoryPageProps {
   scans: DiagnosticScan[];
+  bypassLogs: BypassActionLog[];
   vehicles: Vehicle[];
   customCodes: ObdCodeEntry[];
   onResolveScan: (scan: DiagnosticScan) => Promise<void>;
 }
 
+type HistoryTab = 'all' | 'active' | 'resolved' | 'bypass_actions';
+
 export function HistoryPage({
   scans,
+  bypassLogs,
   vehicles,
   customCodes,
   onResolveScan,
 }: HistoryPageProps) {
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'resolved'>('all');
+  const [activeTab, setActiveTab] = useState<HistoryTab>('all');
+  const [vehicleFilter, setVehicleFilter] = useState<string>('all');
   const [selectedScan, setSelectedScan] = useState<DiagnosticScan | null>(null);
 
-  const filtered = useMemo(() => {
-    return scans.filter((s) => (statusFilter === 'all' ? true : s.status === statusFilter));
-  }, [scans, statusFilter]);
+  const filteredScans = useMemo(() => {
+    return scans.filter((s) => {
+      if (vehicleFilter !== 'all' && s.vehicleId !== vehicleFilter) return false;
+      if (activeTab === 'active') return s.status === 'active';
+      if (activeTab === 'resolved') return s.status === 'resolved';
+      return true;
+    });
+  }, [scans, activeTab, vehicleFilter]);
+
+  const filteredBypassLogs = useMemo(() => {
+    return bypassLogs.filter((log) =>
+      vehicleFilter === 'all' ? true : log.vehicleId === vehicleFilter
+    );
+  }, [bypassLogs, vehicleFilter]);
 
   const getVehicleForScan = (scan: DiagnosticScan) =>
     vehicles.find((v) => v.id === scan.vehicleId);
 
+  const selectedScanBypassLogs = useMemo(() => {
+    if (!selectedScan) return [];
+    return bypassLogs.filter((log) => log.scanId === selectedScan.id);
+  }, [selectedScan, bypassLogs]);
+
   return (
     <div className="space-y-6">
-      <section className="bg-[#0F172A] border border-slate-800 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display font-bold text-xl sm:text-2xl text-white">
-            Diagnostic History
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Review past diagnostic scans, track resolved trouble codes, and export PDF reports.
-          </p>
+      <section className="bg-[#0F172A] border border-slate-800 rounded-2xl p-6 space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h1 className="font-display font-bold text-xl sm:text-2xl text-white">
+              Diagnostic History &amp; Bypass Audit Log
+            </h1>
+            <p className="text-sm text-slate-400 mt-1">
+              Review past scans, export PDF reports, and inspect timestamped Bypass Actions for
+              professional mechanics.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {(
+              [
+                { id: 'all', label: 'All Scans' },
+                { id: 'active', label: 'Unresolved' },
+                { id: 'resolved', label: 'Resolved' },
+                { id: 'bypass_actions', label: `Bypass Actions (${bypassLogs.length})` },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors min-h-[40px] ${
+                  activeTab === tab.id
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-[#0B1120] border border-slate-800 text-slate-300 hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {(['all', 'active', 'resolved'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setStatusFilter(tab)}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold capitalize transition-colors ${
-                statusFilter === tab
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-[#0B1120] border border-slate-800 text-slate-300 hover:text-white'
-              }`}
+        {/* Vehicle Filter & Audit Export Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-800/80">
+          <div className="flex items-center gap-2.5">
+            <label htmlFor="history-vehicle-filter" className="text-xs text-slate-400">
+              Filter Vehicle:
+            </label>
+            <select
+              id="history-vehicle-filter"
+              value={vehicleFilter}
+              onChange={(e) => setVehicleFilter(e.target.value)}
+              className="px-3 py-2 rounded-lg bg-[#0B1120] border border-slate-700 text-xs text-white min-h-[38px]"
             >
-              {tab === 'all' ? 'All Scans' : tab === 'active' ? 'Unresolved' : 'Resolved'}
+              <option value="all">All Vehicles</option>
+              {vehicles.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.year} {v.manufacturer} {v.model} ({v.registrationNumber})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {activeTab === 'bypass_actions' && (
+            <button
+              type="button"
+              onClick={() => downloadBypassAuditPdf(filteredBypassLogs, customCodes)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white min-h-[40px]"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export Mechanic Audit Log (PDF)
             </button>
-          ))}
+          )}
         </div>
       </section>
 
-      {filtered.length === 0 ? (
+      {activeTab === 'bypass_actions' ? (
+        filteredBypassLogs.length === 0 ? (
+          <div className="bg-[#0F172A] border border-slate-800 rounded-2xl p-10 text-center space-y-2">
+            <ClipboardList className="w-8 h-8 text-blue-400 mx-auto" />
+            <p className="text-sm font-medium text-white">No Bypass Actions Recorded Yet</p>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              Whenever a controlled transit limit or simulated Mode $04 sensor bypass is executed
+              in Vehicle Diagnostics, an immutable timestamped record appears here for mechanics.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredBypassLogs.map((log) => {
+              const snap = log.vehicleStatusSnapshot;
+              const matchedVehicle = vehicles.find((v) => v.id === log.vehicleId);
+              return (
+                <article
+                  key={log.id}
+                  className="bg-[#0F172A] border border-slate-800 rounded-2xl p-6 space-y-4"
+                >
+                  {/* Header Timestamp & Action Scope */}
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <span className="font-mono font-semibold text-blue-300 tabular-nums">
+                          {log.occurredAtIso
+                            ? new Date(log.occurredAtIso).toLocaleString()
+                            : 'Timestamp Recorded'}
+                        </span>
+                        <span className="text-slate-600">·</span>
+                        <span className="font-mono text-slate-400">
+                          {snap.connectionMode} · Scan {log.scanId}
+                        </span>
+                        {log.isDemoData && (
+                          <span className="text-[11px] font-mono text-amber-300">· DEMO DATA</span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {matchedVehicle?.registrationNumber && (
+                          <span className="font-mono text-xs font-bold px-2 py-0.5 rounded border border-slate-700 bg-[#0B1120] text-blue-300">
+                            {matchedVehicle.registrationNumber}
+                          </span>
+                        )}
+                        <h2 className="text-base font-semibold text-white">{log.vehicleLabel}</h2>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded border border-blue-500/40 bg-blue-500/10 text-blue-300">
+                        <Sliders className="w-3.5 h-3.5" />
+                        {log.actionType === 'mode04_reset'
+                          ? 'Mode $04 Reset'
+                          : 'Controlled Transit Bypass'}
+                      </span>
+                      <span className="text-xs font-mono px-2.5 py-1 rounded border border-slate-700 bg-[#0B1120] text-slate-200 tabular-nums">
+                        {log.transitProfileLabel} · {log.maxSpeedKmh} km/h ·{' '}
+                        {log.maxRpm.toLocaleString()} RPM
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Modified vs Blocked Sensors */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-[#0B1120] border border-slate-800 space-y-2">
+                      <p className="text-xs font-semibold text-slate-300">
+                        Specific Sensors Modified ({log.modifiedSensors.length})
+                      </p>
+                      <ul className="space-y-1.5 text-xs">
+                        {log.modifiedSensors.map((code) => {
+                          const detail = findObdCodeDetails(code, customCodes);
+                          return (
+                            <li key={code} className="text-slate-200">
+                              <span className="font-mono font-bold text-blue-300">{code}</span> —{' '}
+                              {detail.name}{' '}
+                              <span className="text-slate-400">({detail.category})</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-[#0B1120] border border-slate-800 space-y-2">
+                      <p className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-red-400" />
+                        Very High-Risk Sensors Kept Locked ({log.blockedSensors.length})
+                      </p>
+                      {log.blockedSensors.length === 0 ? (
+                        <p className="text-xs text-slate-400">
+                          None — no very high-risk hardware lockouts present during this action.
+                        </p>
+                      ) : (
+                        <ul className="space-y-1.5 text-xs">
+                          {log.blockedSensors.map((code) => {
+                            const detail = findObdCodeDetails(code, customCodes);
+                            return (
+                              <li key={code} className="text-red-200">
+                                <span className="font-mono font-bold">{code}</span> — {detail.name}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Vehicle Status Snapshot at Time of Action */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-slate-400">
+                      Vehicle Status Snapshot at Time of Action
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      <div className="p-3 rounded-xl bg-[#0B1120] border border-slate-800">
+                        <p className="text-slate-400">Health / Engine</p>
+                        <p className="font-mono font-bold text-white tabular-nums mt-0.5">
+                          {snap.overallHealthScore}/100 · {snap.engineHealthScore}/100
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-[#0B1120] border border-slate-800">
+                        <p className="text-slate-400">Coolant Temp</p>
+                        <p className="font-mono font-bold text-white tabular-nums mt-0.5">
+                          {snap.coolantTempC}°C
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-[#0B1120] border border-slate-800">
+                        <p className="text-slate-400">Battery / Fuel Trim</p>
+                        <p className="font-mono font-bold text-white tabular-nums mt-0.5">
+                          {snap.batteryVoltage > 0 ? `${snap.batteryVoltage}V` : 'Unsupported'} ·{' '}
+                          {snap.fuelTrimPct}%
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-[#0B1120] border border-slate-800">
+                        <p className="text-slate-400">Odometer / Emissions</p>
+                        <p className="font-mono font-bold text-white tabular-nums mt-0.5">
+                          {snap.odometerKm.toLocaleString()} km · {snap.emissionReadiness}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mechanic Audit Note */}
+                  <p className="text-xs text-slate-300 leading-relaxed bg-[#0B1120] border border-slate-800/80 rounded-xl p-3.5">
+                    <strong className="text-white">Mechanic Audit Note:</strong> {log.notes}
+                  </p>
+                </article>
+              );
+            })}
+          </div>
+        )
+      ) : filteredScans.length === 0 ? (
         <div className="bg-[#0F172A] border border-slate-800 rounded-2xl p-10 text-center space-y-2">
           <History className="w-8 h-8 text-blue-400 mx-auto" />
           <p className="text-sm font-medium text-white">No diagnostic history in this filter</p>
@@ -67,8 +293,9 @@ export function HistoryPage({
         </div>
       ) : (
         <div className="space-y-4">
-          {filtered.map((scan) => {
+          {filteredScans.map((scan) => {
             const vehicle = getVehicleForScan(scan);
+            const scanBypassCount = bypassLogs.filter((b) => b.scanId === scan.id).length;
             return (
               <article
                 key={scan.id}
@@ -84,9 +311,19 @@ export function HistoryPage({
                     {scan.isDemoData && (
                       <span className="text-[11px] font-mono text-amber-300">· DEMO DATA</span>
                     )}
+                    {scanBypassCount > 0 && (
+                      <span className="text-[11px] font-mono text-blue-300">
+                        · {scanBypassCount} Bypass Action{scanBypassCount > 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3">
+                    {vehicle?.registrationNumber && (
+                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded border border-slate-700 bg-[#0B1120] text-blue-300">
+                        {vehicle.registrationNumber}
+                      </span>
+                    )}
                     <h2 className="text-base font-semibold text-white">{scan.vehicleLabel}</h2>
                     <span className="text-xs font-mono font-semibold text-blue-400 tabular-nums">
                       Health {scan.overallHealthScore}/100
@@ -107,6 +344,9 @@ export function HistoryPage({
                   {scan.detectedCodes.length > 0 && (
                     <p className="text-xs font-mono text-slate-400">
                       Codes: {scan.detectedCodes.join(', ')}
+                      {scan.resolvedCodes.length > 0
+                        ? ` · Cleared/Bypassed: ${scan.resolvedCodes.join(', ')}`
+                        : ''}
                     </p>
                   )}
                 </div>
@@ -229,6 +469,35 @@ export function HistoryPage({
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {selectedScanBypassLogs.length > 0 && (
+                <div className="space-y-2.5 pt-2 border-t border-slate-800">
+                  <h4 className="text-xs font-semibold text-blue-300">
+                    Recorded Bypass Actions on This Scan ({selectedScanBypassLogs.length})
+                  </h4>
+                  {selectedScanBypassLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="p-3.5 rounded-xl bg-[#0B1120] border border-blue-500/30 text-xs space-y-1"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-blue-300 tabular-nums">
+                          {log.occurredAtIso
+                            ? new Date(log.occurredAtIso).toLocaleString()
+                            : 'Recorded'}
+                        </span>
+                        <span className="font-mono text-slate-300">
+                          {log.transitProfileLabel} ({log.maxSpeedKmh} km/h · {log.maxRpm} RPM)
+                        </span>
+                      </div>
+                      <p className="text-white font-medium">
+                        Modified Sensors: {log.modifiedSensors.join(', ')}
+                      </p>
+                      <p className="text-slate-400">{log.notes}</p>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

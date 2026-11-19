@@ -9,6 +9,7 @@ import {
 import { Loader2, MailCheck, Sparkles } from 'lucide-react';
 import { AppShell } from './components/AppShell';
 import {
+  DEMO_BYPASS_LOGS,
   DEMO_CONNECTION_HISTORY,
   DEMO_MAINTENANCE,
   DEMO_NOTIFICATIONS,
@@ -32,6 +33,7 @@ import { ProfileSettingsPage } from './pages/ProfileSettingsPage';
 import { ServiceCentresPage } from './pages/ServiceCentresPage';
 import { VehicleHealthPage } from './pages/VehicleHealthPage';
 import {
+  createBypassActionLog,
   createMaintenanceRecord,
   createNotification,
   createServiceEnquiry,
@@ -45,6 +47,7 @@ import {
   saveDiagnosticScan,
   subscribeCustomObdCodes,
   subscribeServiceCentres,
+  subscribeUserBypassLogs,
   subscribeUserEnquiries,
   subscribeUserMaintenance,
   subscribeUserNotifications,
@@ -56,6 +59,7 @@ import {
 } from './services/firestoreService';
 import type {
   AppSection,
+  BypassActionLog,
   ConnectionHistoryEntry,
   ConnectionMode,
   ConnectionStatus,
@@ -99,6 +103,7 @@ export default function App() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [activeVehicleId, setActiveVehicleId] = useState<string>('');
   const [scans, setScans] = useState<DiagnosticScan[]>([]);
+  const [bypassLogs, setBypassLogs] = useState<BypassActionLog[]>([]);
   const [maintenance, setMaintenance] = useState<MaintenanceRecord[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [enquiries, setEnquiries] = useState<ServiceEnquiry[]>([]);
@@ -170,6 +175,7 @@ export default function App() {
         });
       }),
       subscribeUserScans(uid, setScans),
+      subscribeUserBypassLogs(uid, setBypassLogs),
       subscribeUserMaintenance(uid, setMaintenance),
       subscribeUserNotifications(uid, setNotifications),
       subscribeUserEnquiries(uid, setEnquiries),
@@ -188,6 +194,7 @@ export default function App() {
     setVehicles(DEMO_VEHICLES);
     setActiveVehicleId(DEMO_VEHICLES[0].id);
     setScans(DEMO_SCANS);
+    setBypassLogs(DEMO_BYPASS_LOGS);
     setMaintenance(DEMO_MAINTENANCE);
     setNotifications(DEMO_NOTIFICATIONS);
     setEnquiries([]);
@@ -374,11 +381,12 @@ export default function App() {
 
   const handleSaveNewScan = async (
     scan: Omit<DiagnosticScan, 'id' | 'scannedAt' | 'updatedAt'>
-  ) => {
+  ): Promise<string> => {
     if (isDemoSession || !firebaseUser) {
+      const demoId = `demo_scan_${Date.now()}`;
       const created: DiagnosticScan = {
         ...scan,
-        id: `demo_scan_${Date.now()}`,
+        id: demoId,
       };
       setScans((prev) => [created, ...prev]);
       setVehicles((prev) =>
@@ -402,10 +410,10 @@ export default function App() {
         },
         ...prev,
       ]);
-      return;
+      return demoId;
     }
 
-    await saveDiagnosticScan(firebaseUser.uid, scan);
+    const savedId = await saveDiagnosticScan(firebaseUser.uid, scan);
     await updateVehicleDetails(scan.vehicleId, {
       lastHealthScore: scan.overallHealthScore,
     });
@@ -419,6 +427,7 @@ export default function App() {
       isRead: false,
       relatedPath: 'diagnostics',
     });
+    return savedId;
   };
 
   const handleResolveScan = async (scan: DiagnosticScan) => {
@@ -432,7 +441,91 @@ export default function App() {
       );
       return;
     }
-    await markScanResolved(scan.id, scan.detectedCodes);
+    await markScanResolved(scan.id, scan.detectedCodes, 'resolved');
+  };
+
+  const handleApplyControlledBypass = async (
+    scan: DiagnosticScan,
+    bypassedCodes: string[],
+    profile: { label: string; maxSpeedKmh: number; maxRpm: number; maxDistanceKm: number },
+    newlyModifiedCodes: string[],
+    blockedCodes: string[]
+  ) => {
+    const allCleared = scan.detectedCodes.every((c) => bypassedCodes.includes(c));
+    const nextStatus: 'active' | 'resolved' = allCleared ? 'resolved' : 'active';
+    const notifTitle = `Transit Cap Active: ${profile.maxSpeedKmh} km/h · ${profile.maxRpm.toLocaleString()} RPM`;
+    const notifMsg = `Controlled bypass/Mode $04 applied for non-critical sensor(s): ${newlyModifiedCodes.join(', ')} on ${scan.vehicleLabel}. Max workshop transit radius: ${profile.maxDistanceKm} km.`;
+
+    const targetVehicle = vehicles.find((v) => v.id === scan.vehicleId) ?? activeVehicle;
+    const logPayload: Omit<BypassActionLog, 'id' | 'ownerId' | 'occurredAt' | 'occurredAtIso'> = {
+      vehicleId: scan.vehicleId,
+      vehicleLabel: scan.vehicleLabel,
+      scanId: scan.id,
+      actionType: profile.maxSpeedKmh >= 55 ? 'mode04_reset' : 'controlled_bypass',
+      modifiedSensors: newlyModifiedCodes,
+      blockedSensors: blockedCodes,
+      transitProfileLabel: profile.label,
+      maxSpeedKmh: profile.maxSpeedKmh,
+      maxRpm: profile.maxRpm,
+      vehicleStatusSnapshot: {
+        overallHealthScore: scan.overallHealthScore,
+        engineHealthScore: scan.engineHealthScore,
+        batteryVoltage: scan.batteryVoltage,
+        coolantTempC: scan.coolantTempC,
+        fuelTrimPct: scan.fuelTrimPct,
+        odometerKm: targetVehicle?.odometerKm ?? 0,
+        emissionReadiness: scan.emissionReadiness,
+        connectionMode: scan.connectionMode,
+      },
+      isDemoData: scan.isDemoData,
+      notes:
+        blockedCodes.length > 0
+          ? `Applied ${profile.label} (${profile.maxSpeedKmh} km/h · ${profile.maxRpm} RPM) for ${newlyModifiedCodes.join(', ')}. Very high-risk code(s) ${blockedCodes.join(', ')} stayed hardware-locked.`
+          : `Applied ${profile.label} (${profile.maxSpeedKmh} km/h · ${profile.maxRpm} RPM) for non-critical sensor(s) ${newlyModifiedCodes.join(', ')} for workshop transit.`,
+    };
+
+    if (isDemoSession || !firebaseUser) {
+      setScans((prev) =>
+        prev.map((s) =>
+          s.id === scan.id ? { ...s, status: nextStatus, resolvedCodes: bypassedCodes } : s
+        )
+      );
+      setBypassLogs((prev) => [
+        {
+          ...logPayload,
+          id: `demo_byp_${Date.now()}`,
+          ownerId: 'demo-user',
+          occurredAtIso: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+      setNotifications((prev) => [
+        {
+          id: `demo_notif_${Date.now()}`,
+          ownerId: 'demo-user',
+          type: 'diagnostic',
+          title: notifTitle,
+          message: notifMsg,
+          isRead: false,
+          relatedPath: 'diagnostics',
+          createdAtIso: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+      return;
+    }
+
+    if (scan.status !== 'resolved') {
+      await markScanResolved(scan.id, bypassedCodes, nextStatus);
+    }
+    await createBypassActionLog(firebaseUser.uid, logPayload);
+    await createNotification(firebaseUser.uid, {
+      type: 'diagnostic',
+      title: notifTitle,
+      message: notifMsg,
+      isRead: false,
+      relatedPath: 'diagnostics',
+    });
   };
 
   const handleAddMaintenance = async (
@@ -550,6 +643,7 @@ export default function App() {
       setUserProfile(null);
       setVehicles([]);
       setScans([]);
+      setBypassLogs([]);
       setMaintenance([]);
       setNotifications([]);
       setPublicRoute('landing');
@@ -735,6 +829,7 @@ export default function App() {
           latestScan={latestScan}
           customCodes={customCodes}
           onSaveNewScan={handleSaveNewScan}
+          onApplyControlledBypass={handleApplyControlledBypass}
           onAskAiAboutCode={handleAskAiAboutCode}
           onNavigate={setActiveSection}
         />
@@ -781,6 +876,7 @@ export default function App() {
       {activeSection === 'history' && (
         <HistoryPage
           scans={scans}
+          bypassLogs={bypassLogs}
           vehicles={vehicles}
           customCodes={customCodes}
           onResolveScan={handleResolveScan}

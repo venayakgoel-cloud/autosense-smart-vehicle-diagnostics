@@ -17,6 +17,7 @@ import {
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import {
   FIELD_LIMITS,
+  type BypassActionLog,
   type DiagnosticScan,
   type MaintenanceRecord,
   type NotificationItem,
@@ -296,13 +297,14 @@ export async function saveDiagnosticScan(
 
 export async function markScanResolved(
   scanId: string,
-  detectedCodes: string[]
+  resolvedCodes: string[],
+  nextStatus: 'active' | 'resolved' = 'resolved'
 ): Promise<void> {
   const path = `diagnosticScans/${scanId}`;
   try {
     await updateDoc(doc(db, 'diagnosticScans', scanId), {
-      resolvedCodes: detectedCodes.slice(0, 20),
-      status: 'resolved',
+      resolvedCodes: resolvedCodes.slice(0, 20),
+      status: nextStatus,
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
@@ -666,5 +668,72 @@ export async function adminUpdateEnquiryStatus(
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+// =========================================================
+// Bypass Action Audit Logs (Immutable Mechanic Trail)
+// =========================================================
+
+export function subscribeUserBypassLogs(
+  uid: string,
+  onData: (logs: BypassActionLog[]) => void
+): Unsubscribe {
+  const q = query(collection(db, 'bypassLogs'), where('ownerId', '==', uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map((d) => {
+        const data = d.data() as Omit<BypassActionLog, 'id'>;
+        return {
+          ...data,
+          id: d.id,
+          occurredAtIso: timestampToIso(data.occurredAt, data.occurredAtIso),
+        };
+      });
+      list.sort((a, b) => (b.occurredAtIso ?? '').localeCompare(a.occurredAtIso ?? ''));
+      onData(list);
+    },
+    (error) => handleFirestoreError(error, OperationType.LIST, 'bypassLogs')
+  );
+}
+
+export async function createBypassActionLog(
+  uid: string,
+  log: Omit<BypassActionLog, 'id' | 'ownerId' | 'occurredAt' | 'occurredAtIso'>
+): Promise<string> {
+  const id = makeDocId('byp');
+  const path = `bypassLogs/${id}`;
+  const payload = {
+    ownerId: uid,
+    vehicleId: log.vehicleId,
+    vehicleLabel: clampStr(log.vehicleLabel, 120),
+    scanId: log.scanId,
+    actionType: log.actionType,
+    modifiedSensors: log.modifiedSensors.slice(0, 20).map((s) => clampStr(s, 12)),
+    blockedSensors: log.blockedSensors.slice(0, 20).map((s) => clampStr(s, 12)),
+    transitProfileLabel: clampStr(log.transitProfileLabel, 80),
+    maxSpeedKmh: Math.min(150, Math.max(0, Number(log.maxSpeedKmh) || 0)),
+    maxRpm: Math.min(8000, Math.max(0, Number(log.maxRpm) || 0)),
+    vehicleStatusSnapshot: {
+      overallHealthScore: Math.min(100, Math.max(0, Number(log.vehicleStatusSnapshot.overallHealthScore) || 0)),
+      engineHealthScore: Math.min(100, Math.max(0, Number(log.vehicleStatusSnapshot.engineHealthScore) || 0)),
+      batteryVoltage: Math.min(30, Math.max(-1, Number(log.vehicleStatusSnapshot.batteryVoltage))),
+      coolantTempC: Math.min(220, Math.max(-50, Number(log.vehicleStatusSnapshot.coolantTempC))),
+      fuelTrimPct: Math.min(50, Math.max(-50, Number(log.vehicleStatusSnapshot.fuelTrimPct))),
+      odometerKm: Math.min(2000000, Math.max(0, Number(log.vehicleStatusSnapshot.odometerKm) || 0)),
+      emissionReadiness: log.vehicleStatusSnapshot.emissionReadiness,
+      connectionMode: log.vehicleStatusSnapshot.connectionMode,
+    },
+    isDemoData: Boolean(log.isDemoData),
+    notes: clampStr(log.notes, FIELD_LIMITS.NOTES_MAX),
+    occurredAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(doc(db, 'bypassLogs', id), payload);
+    return id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
   }
 }

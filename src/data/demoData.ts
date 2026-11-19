@@ -1,4 +1,5 @@
 import type {
+  BypassActionLog,
   ConnectionHistoryEntry,
   DiagnosticScan,
   MaintenanceRecord,
@@ -396,4 +397,105 @@ export const DEMO_SCAN_PRESETS: DemoScanPreset[] = [
     summary:
       'Demo scan completed on a partial-PID vehicle profile: P0171 detected. Battery voltage and emissions readiness monitors are not reported by this simulated ECU.',
   },
+  {
+    id: 'preset-limp-home',
+    title: 'ECU Limp-Home Transit Scenario',
+    subtitle: 'P0101 & P0700 · Driveable at reduced power to service centre',
+    overallHealthScore: 68,
+    engineHealthScore: 70,
+    batteryVoltage: 12.6,
+    coolantTempC: 90,
+    fuelTrimPct: 5.5,
+    emissionReadiness: 'Pending',
+    supportedSensors: {
+      battery: true,
+      coolantTemp: true,
+      fuelSystem: true,
+      emissions: true,
+      rpm: true,
+    },
+    detectedCodes: ['P0101', 'P0700'],
+    summary:
+      'Demo scan detected MAF range fault (P0101) and Transmission Control alert (P0700). Vehicle ECU activates reduced-power limp-home fallback so you can carefully reach a workshop.',
+  },
+  {
+    id: 'preset-no-start-lockout',
+    title: 'No-Start Safety Lockout Scenario',
+    subtitle: 'Critical · P0335 Crank Sensor & P1610 Immobilizer Lockout',
+    overallHealthScore: 39,
+    engineHealthScore: 32,
+    batteryVoltage: 12.3,
+    coolantTempC: 42,
+    fuelTrimPct: 0,
+    emissionReadiness: 'Pending',
+    supportedSensors: {
+      battery: true,
+      coolantTemp: true,
+      fuelSystem: false,
+      emissions: false,
+      rpm: false,
+    },
+    detectedCodes: ['P0335', 'P1610'],
+    summary:
+      'Demo scan detected a Crankshaft Position Sensor failure (P0335) and Immobilizer Lockout (P1610). Mandatory starting/safety sensors cannot be bypassed via OBD-II—towing to a service centre is required.',
+  },
 ];
+
+export const DEMO_BYPASS_LOGS: BypassActionLog[] = [
+  {
+    id: 'demo-bypass-1',
+    ownerId: 'demo-user',
+    vehicleId: 'demo-veh-civic',
+    vehicleLabel: '2022 Honda Civic Touring',
+    scanId: 'demo-scan-latest',
+    actionType: 'controlled_bypass',
+    modifiedSensors: ['P0455'],
+    blockedSensors: [],
+    transitProfileLabel: 'City Workshop Transit',
+    maxSpeedKmh: 40,
+    maxRpm: 2500,
+    vehicleStatusSnapshot: {
+      overallHealthScore: 82,
+      engineHealthScore: 79,
+      batteryVoltage: 12.5,
+      coolantTempC: 91,
+      fuelTrimPct: 7.4,
+      odometerKm: 34820,
+      emissionReadiness: 'Ready',
+      connectionMode: 'DEMO_OBD',
+    },
+    isDemoData: true,
+    notes:
+      'Low-risk EVAP vapor leak alert (P0455) cleared under simulated City Workshop Transit cap (40 km/h · 2,500 RPM) while P0171 trim monitoring remained active for technician inspection.',
+    occurredAtIso: '2026-11-15T10:28:14Z',
+  },
+  {
+    id: 'demo-bypass-2',
+    ownerId: 'demo-user',
+    vehicleId: 'demo-veh-civic',
+    vehicleLabel: '2022 Honda Civic Touring',
+    scanId: 'demo-scan-prev-1',
+    actionType: 'mode04_reset',
+    modifiedSensors: ['P0455'],
+    blockedSensors: [],
+    transitProfileLabel: 'Direct Service Route',
+    maxSpeedKmh: 55,
+    maxRpm: 3000,
+    vehicleStatusSnapshot: {
+      overallHealthScore: 91,
+      engineHealthScore: 92,
+      batteryVoltage: 12.7,
+      coolantTempC: 89,
+      fuelTrimPct: 2.1,
+      odometerKm: 33910,
+      emissionReadiness: 'Ready',
+      connectionMode: 'DEMO_OBD',
+    },
+    isDemoData: true,
+    notes:
+      'Simulated OBD-II Mode $04 indicator reset executed after fuel filler cap reseat verification; vehicle remained driveable directly to service bay.',
+    occurredAtIso: '2026-10-18T14:19:42Z',
+  },
+];
+
+

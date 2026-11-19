@@ -107,5 +107,14 @@ export const DIRTY_DOZEN_CASES = [
     operation: 'list',
     auth: { uid: 'attacker_uid', token: { email_verified: true } },
     expected: 'PERMISSION_DENIED'
+  },
+  {
+    id: 13,
+    name: 'Immutable Bypass Audit Log Tampering',
+    path: '/bypassLogs/byp_1',
+    operation: 'update',
+    auth: { uid: 'user_1', token: { email_verified: true } },
+    payload: { modifiedSensors: ['P0420'] },
+    expected: 'PERMISSION_DENIED'
   }
 ];

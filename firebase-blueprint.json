@@ -167,6 +167,28 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "ownerName", "ownerEmail", "type", "subject", "message", "status", "createdAt", "updatedAt"]
+    },
+    "BypassActionLog": {
+      "title": "BypassActionLog",
+      "description": "Immutable mechanic audit trail entry recording controlled sensor bypasses, timestamps, and vehicle telemetry status.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleLabel": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "scanId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actionType": { "type": "string", "enum": ["controlled_bypass", "mode04_reset"] },
+        "modifiedSensors": { "type": "array" },
+        "blockedSensors": { "type": "array" },
+        "transitProfileLabel": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "maxSpeedKmh": { "type": "number" },
+        "maxRpm": { "type": "number" },
+        "vehicleStatusSnapshot": { "type": "object" },
+        "isDemoData": { "type": "boolean" },
+        "notes": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "occurredAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "vehicleLabel", "scanId", "actionType", "modifiedSensors", "blockedSensors", "transitProfileLabel", "maxSpeedKmh", "maxRpm", "vehicleStatusSnapshot", "isDemoData", "notes", "occurredAt"]
     }
   },
   "firestore": {
@@ -205,6 +227,10 @@
     "/serviceEnquiries/{enquiryId}": {
       "schema": { "$ref": "#/entities/ServiceEnquiry" },
       "description": "Service appointment requests, support enquiries, and user feedback."
+    },
+    "/bypassLogs/{logId}": {
+      "schema": { "$ref": "#/entities/BypassActionLog" },
+      "description": "Immutable mechanic audit trail for controlled sensor bypass actions."
     }
   }
 }

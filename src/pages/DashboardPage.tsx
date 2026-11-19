@@ -66,6 +66,10 @@ export function DashboardPage({
           {activeVehicle ? (
             <p className="text-sm text-slate-300">
               Connected Vehicle:{' '}
+              <span className="font-mono font-bold text-blue-300">
+                {activeVehicle.registrationNumber}
+              </span>{' '}
+              ·{' '}
               <span className="font-semibold text-white">
                 {activeVehicle.year} {activeVehicle.manufacturer} {activeVehicle.model}
               </span>{' '}

@@ -500,6 +500,14 @@ export function AuthPages({
                   <div className="mt-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-[#0B1120] border border-slate-800">
                     <input
                       type="text"
+                      maxLength={30}
+                      value={regNumber}
+                      onChange={(e) => setRegNumber(e.target.value)}
+                      placeholder="Registration number (e.g. CA-8492-AS)"
+                      className="sm:col-span-2 px-3 py-2 rounded-lg bg-[#0F172A] border border-slate-700 text-sm text-white uppercase font-mono"
+                    />
+                    <input
+                      type="text"
                       maxLength={60}
                       value={manufacturer}
                       onChange={(e) => setManufacturer(e.target.value)}
@@ -534,14 +542,6 @@ export function AuthPages({
                       <option value="Electric">Electric</option>
                       <option value="CNG">CNG</option>
                     </select>
-                    <input
-                      type="text"
-                      maxLength={30}
-                      value={regNumber}
-                      onChange={(e) => setRegNumber(e.target.value)}
-                      placeholder="Registration No. (e.g. CA-8492)"
-                      className="sm:col-span-2 px-3 py-2 rounded-lg bg-[#0F172A] border border-slate-700 text-sm text-white uppercase font-mono"
-                    />
                   </div>
                 )}
               </div>

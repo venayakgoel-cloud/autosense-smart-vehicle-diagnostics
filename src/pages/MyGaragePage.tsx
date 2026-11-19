@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
 import { Car, CheckCircle2, Edit3, Plus, Star, Trash2, X } from 'lucide-react';
+import {
+  CATALOG_MANUFACTURERS,
+  decodeVinViaApi,
+  getModelsForManufacturer,
+  inferDefaultFuelForModel,
+} from '../services/automotiveCatalog';
 import { FIELD_LIMITS, type FuelType, type Vehicle } from '../types/autosense';
 
 interface MyGaragePageProps {
@@ -42,26 +48,30 @@ export function MyGaragePage({
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Add/Edit form fields
+  const [registrationNumber, setRegistrationNumber] = useState('');
   const [manufacturer, setManufacturer] = useState('');
   const [model, setModel] = useState('');
   const [year, setYear] = useState('2022');
   const [fuelType, setFuelType] = useState<FuelType>('Petrol');
-  const [registrationNumber, setRegistrationNumber] = useState('');
   const [odometerKm, setOdometerKm] = useState('0');
   const [vin, setVin] = useState('');
   const [isPrimary, setIsPrimary] = useState(vehicles.length === 0);
+  const [vinDecoding, setVinDecoding] = useState(false);
+  const [vinFeedback, setVinFeedback] = useState('');
 
   const resetForm = () => {
+    setRegistrationNumber('');
     setManufacturer('');
     setModel('');
     setYear('2022');
     setFuelType('Petrol');
-    setRegistrationNumber('');
     setOdometerKm('0');
     setVin('');
     setIsPrimary(vehicles.length === 0);
     setEditingId(null);
     setErrorMsg('');
+    setVinFeedback('');
   };
 
   const openAdd = () => {
@@ -71,22 +81,42 @@ export function MyGaragePage({
 
   const openEdit = (v: Vehicle) => {
     setEditingId(v.id);
+    setRegistrationNumber(v.registrationNumber);
     setManufacturer(v.manufacturer);
     setModel(v.model);
     setYear(String(v.year));
     setFuelType(v.fuelType);
-    setRegistrationNumber(v.registrationNumber);
     setOdometerKm(String(v.odometerKm));
     setVin(v.vin ?? '');
     setIsPrimary(v.isPrimary);
     setErrorMsg('');
+    setVinFeedback('');
     setFormOpen(true);
+  };
+
+  const handleFormVinDecode = async () => {
+    setVinFeedback('');
+    setErrorMsg('');
+    setVinDecoding(true);
+    try {
+      const decoded = await decodeVinViaApi(vin);
+      setVin(decoded.vin);
+      if (decoded.manufacturer) setManufacturer(decoded.manufacturer);
+      if (decoded.model) setModel(decoded.model);
+      if (decoded.year) setYear(String(decoded.year));
+      if (decoded.fuelType) setFuelType(decoded.fuelType);
+      setVinFeedback(decoded.note);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Unable to decode VIN.');
+    } finally {
+      setVinDecoding(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manufacturer.trim() || !model.trim() || !registrationNumber.trim()) {
-      setErrorMsg('Please enter manufacturer, model, and registration number.');
+      setErrorMsg('Please enter registration number, manufacturer, and model.');
       return;
     }
 
@@ -96,13 +126,15 @@ export function MyGaragePage({
       const parsedYear = Math.min(2030, Math.max(1980, Number(year) || 2022));
       const parsedOdo = Math.min(2000000, Math.max(0, Number(odometerKm) || 0));
 
+      const cleanPlate = registrationNumber.trim().toUpperCase();
+
       if (editingId) {
         await onUpdateVehicle(editingId, {
           manufacturer: manufacturer.trim(),
           model: model.trim(),
           year: parsedYear,
           fuelType,
-          registrationNumber: registrationNumber.trim().toUpperCase(),
+          registrationNumber: cleanPlate,
           odometerKm: parsedOdo,
           vin: vin.trim().toUpperCase(),
           isPrimary,
@@ -113,7 +145,7 @@ export function MyGaragePage({
           model: model.trim(),
           year: parsedYear,
           fuelType,
-          registrationNumber: registrationNumber.trim().toUpperCase(),
+          registrationNumber: cleanPlate,
           odometerKm: parsedOdo,
           vin: vin.trim().toUpperCase(),
           isPrimary,
@@ -147,8 +179,8 @@ export function MyGaragePage({
         <div>
           <h1 className="font-display font-bold text-xl sm:text-2xl text-white">My Garage</h1>
           <p className="text-sm text-slate-400 mt-1">
-            Manage multiple family vehicles, select your primary car, and keep odometer details up
-            to date.
+            Register and manage your vehicles using manufacturer, model, registration number, and
+            optional VIN.
           </p>
         </div>
         <button
@@ -189,16 +221,37 @@ export function MyGaragePage({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">
+                Registration Number *
+              </label>
+              <input
+                type="text"
+                required
+                maxLength={FIELD_LIMITS.REG_NUMBER_MAX}
+                value={registrationNumber}
+                onChange={(e) => setRegistrationNumber(e.target.value)}
+                placeholder="e.g. CA-8492-AS"
+                className="w-full px-3 py-2.5 rounded-xl bg-[#0B1120] border border-slate-700 text-sm text-white font-mono uppercase"
+              />
+            </div>
+
+            <div>
               <label className="block text-xs font-medium text-slate-300 mb-1">Manufacturer *</label>
               <input
                 type="text"
                 required
+                list="garage-makes-list"
                 maxLength={FIELD_LIMITS.MANUFACTURER_MAX}
                 value={manufacturer}
                 onChange={(e) => setManufacturer(e.target.value)}
                 placeholder="e.g. Honda, Toyota, Hyundai"
                 className="w-full px-3 py-2.5 rounded-xl bg-[#0B1120] border border-slate-700 text-sm text-white"
               />
+              <datalist id="garage-makes-list">
+                {CATALOG_MANUFACTURERS.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
             </div>
 
             <div>
@@ -206,12 +259,23 @@ export function MyGaragePage({
               <input
                 type="text"
                 required
+                list="garage-models-list"
                 maxLength={FIELD_LIMITS.MODEL_MAX}
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
+                onChange={(e) => {
+                  const nextModel = e.target.value;
+                  setModel(nextModel);
+                  const inferred = inferDefaultFuelForModel(manufacturer, nextModel);
+                  if (inferred) setFuelType(inferred);
+                }}
                 placeholder="e.g. Civic Touring"
                 className="w-full px-3 py-2.5 rounded-xl bg-[#0B1120] border border-slate-700 text-sm text-white"
               />
+              <datalist id="garage-models-list">
+                {getModelsForManufacturer(manufacturer).map((entry) => (
+                  <option key={entry.model} value={entry.model} />
+                ))}
+              </datalist>
             </div>
 
             <div>
@@ -246,21 +310,6 @@ export function MyGaragePage({
 
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1">
-                Registration Number *
-              </label>
-              <input
-                type="text"
-                required
-                maxLength={FIELD_LIMITS.REG_NUMBER_MAX}
-                value={registrationNumber}
-                onChange={(e) => setRegistrationNumber(e.target.value)}
-                placeholder="CA-8492-AS"
-                className="w-full px-3 py-2.5 rounded-xl bg-[#0B1120] border border-slate-700 text-sm text-white font-mono uppercase"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
                 Odometer Reading (km)
               </label>
               <input
@@ -273,21 +322,32 @@ export function MyGaragePage({
               />
             </div>
 
-            <div className="sm:col-span-2">
+            <div>
               <label className="block text-xs font-medium text-slate-300 mb-1">
-                Vehicle Identification Number / VIN (optional)
+                Vehicle Identification Number / VIN (17-char auto-decode)
               </label>
-              <input
-                type="text"
-                maxLength={FIELD_LIMITS.VIN_MAX}
-                value={vin}
-                onChange={(e) => setVin(e.target.value)}
-                placeholder="17-character VIN"
-                className="w-full px-3 py-2.5 rounded-xl bg-[#0B1120] border border-slate-700 text-sm text-white font-mono uppercase"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  maxLength={FIELD_LIMITS.VIN_MAX}
+                  value={vin}
+                  onChange={(e) => setVin(e.target.value.toUpperCase())}
+                  placeholder="17-character VIN"
+                  className="flex-1 min-w-0 px-3 py-2.5 rounded-xl bg-[#0B1120] border border-slate-700 text-sm text-white font-mono uppercase"
+                />
+                <button
+                  type="button"
+                  disabled={vinDecoding || vin.trim().length < 17}
+                  onClick={() => void handleFormVinDecode()}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white whitespace-nowrap disabled:opacity-50"
+                >
+                  {vinDecoding ? '...' : 'Decode VIN'}
+                </button>
+              </div>
+              {vinFeedback && <p className="text-[11px] text-emerald-300 mt-1">{vinFeedback}</p>}
             </div>
 
-            <div className="flex items-end pb-2">
+            <div className="sm:col-span-2 lg:col-span-3 flex items-center pt-1">
               <label className="flex items-center gap-2.5 text-sm text-slate-200 cursor-pointer">
                 <input
                   type="checkbox"
@@ -325,8 +385,7 @@ export function MyGaragePage({
           <Car className="w-9 h-9 text-blue-400 mx-auto" />
           <h2 className="text-base font-semibold text-white">Your Garage is Empty</h2>
           <p className="text-sm text-slate-400 max-w-md mx-auto">
-            Add your car details to run OBD-II diagnostics, track service reminders, and monitor
-            health scores.
+            Add your vehicle details to run OBD-II diagnostics and monitor health scores.
           </p>
           <button
             type="button"
@@ -351,6 +410,9 @@ export function MyGaragePage({
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded border border-slate-700 bg-[#0B1120] text-blue-300">
+                        {v.registrationNumber}
+                      </span>
                       <h2 className="text-lg font-display font-bold text-white">
                         {v.year} {v.manufacturer} {v.model}
                       </h2>
@@ -364,9 +426,7 @@ export function MyGaragePage({
                         <span className="text-[11px] font-mono text-amber-300">· DEMO DATA</span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-400 font-mono">
-                      {v.registrationNumber} · {v.fuelType}
-                    </p>
+                    <p className="text-xs text-slate-400 font-mono">Fuel: {v.fuelType}</p>
                   </div>
 
                   <div className="text-right">

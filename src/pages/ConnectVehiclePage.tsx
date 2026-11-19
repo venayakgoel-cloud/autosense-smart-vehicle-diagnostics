@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   AlertCircle,
   Bluetooth,
@@ -284,17 +284,20 @@ export function ConnectVehiclePage({
           </div>
           <div className="p-6 space-y-4 flex-1">
             <h2 className="text-sm font-semibold text-white">Vehicle Identification Details</h2>
+
             {activeVehicle ? (
               <dl className="grid grid-cols-2 gap-3 text-xs">
                 <div>
-                  <dt className="text-slate-400">Vehicle</dt>
-                  <dd className="text-white font-medium mt-0.5">
-                    {activeVehicle.year} {activeVehicle.manufacturer} {activeVehicle.model}
+                  <dt className="text-slate-400">Registration Number</dt>
+                  <dd className="text-blue-300 font-mono font-bold mt-0.5">
+                    {activeVehicle.registrationNumber}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-400">Registration</dt>
-                  <dd className="text-white font-mono mt-0.5">{activeVehicle.registrationNumber}</dd>
+                  <dt className="text-slate-400">Vehicle Model</dt>
+                  <dd className="text-white font-medium mt-0.5">
+                    {activeVehicle.year} {activeVehicle.manufacturer} {activeVehicle.model}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-slate-400">Fuel / Powertrain</dt>
@@ -360,6 +363,48 @@ export function ConnectVehiclePage({
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Multi-Brand Vehicle & Protocol Support */}
+      <section className="bg-[#0F172A] border border-slate-800 rounded-2xl p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="font-display font-bold text-base text-white">
+              Universal Multi-Brand Vehicle &amp; Protocol Support
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Compatible with OBD-II / EOBD compliant passenger cars, SUVs, hybrids, and light
+              EVs worldwide.
+            </p>
+          </div>
+          <span className="text-xs font-mono text-blue-400">
+            ISO 15765-4 CAN · KWP2000 · ISO 9141-2 · J1850
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 text-xs text-slate-300">
+          {[
+            'Toyota / Lexus',
+            'Honda / Acura',
+            'Ford / Lincoln',
+            'GM / Chevrolet',
+            'VW / Audi / Skoda',
+            'BMW / MINI',
+            'Mercedes-Benz',
+            'Hyundai / Kia',
+            'Nissan / Infiniti',
+            'Stellantis / Jeep',
+            'Subaru / Mazda',
+            'Tata / Mahindra / Suzuki',
+          ].map((make) => (
+            <div
+              key={make}
+              className="px-3 py-2 rounded-lg bg-[#0B1120] border border-slate-800 font-medium text-center"
+            >
+              {make}
+            </div>
+          ))}
         </div>
       </section>
 
